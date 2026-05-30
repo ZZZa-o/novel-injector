@@ -1,0 +1,12 @@
+{
+  "display_name": "Novel Injector - 小说上下文注入",
+  "loading_order": 200,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "",
+  "version": "1.0.0",
+  "homePage": "",
+  "auto_update": false
+}
