@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Novel Injector - 小说上下文注入插件
  * 功能：上传小说 → 分段清洗压缩 → 提取剧情/角色 → 向量化 → 按阶段开关动态注入酒馆上下文
  */
@@ -146,13 +146,21 @@ const CLEAN_PROMPT = `小说分阶段精准压缩
 {
   "characters": [
     {
-      "name": "角色名（使用最常用的称呼；多个名字/封号/别名在 identity 中注明）",
+      "name": "角色名（使用本段最常用的稳定称呼；多个名字/封号/别名不要堆进 name）",
       "role": "主角|配角|反派|其他",
-      "identity": "身份背景：姓名来历、出身、年龄、职位/封号等固定信息，原文有则照录；别名或曾用名一并注明",
+      "identity": "身份背景：姓名来历、出身、年龄、职位/封号等固定信息，原文有则照录",
       "appearance": "外貌描写：原文有则摘录关键词，无则留空字符串",
       "gender": "性别：原文有明确描写则照录（男/女/不明/其他），无任何描写则留空字符串",
       "personality": "核心性格特质：只记录自始至终不会改变的根本特质，格式：'特征词：首次体现该特质的行为依据'。随剧情演变的状态、立场、情绪一律不写",
       "relations": "与其他角色的初始关系，格式：'角色名：初始关系'，多个用分号分隔。关系随剧情改变的部分不写"
+    }
+  ],
+  "character_aliases": [
+    {
+      "character_name": "归属角色名；优先填 characters 中的 name，若是前文已出现人物则填能识别其本人的稳定姓名",
+      "text": "本段原文出现的称呼/昵称/外号/阶段性姓名/身份称谓",
+      "kind": "primary|nickname|alias|stage_name|title",
+      "note": "简短说明：如母亲称呼、同伴昵称、长大改名、身份称谓等"
     }
   ],
   "plots": [
@@ -173,7 +181,15 @@ const CLEAN_PROMPT = `小说分阶段精准压缩
 【七、字段填写规则】
 ▌characters 录入规则：
 - 只收录本段首次登场的角色；前文已出现过的角色不得重复输出
-- 同一真实人物只能出现一次：多个名字须合并为一条，name 取出现频率最高的称呼，其余写入 identity
+- 同一真实人物只能出现一次：name 取本段最稳定、最常用的称呼；别名、昵称、外号、阶段性姓名、身份称谓不要塞进 identity，统一写入 character_aliases
+
+▌character_aliases 录入规则：
+- 收集本段原文实际出现过的角色称呼，不要凭空推测
+- 可收集类型：正式名/常用名(primary)、昵称(nickname)、外号或别称(alias)、阶段性姓名或改名(stage_name)、身份称谓(title)
+- 阶段性姓名如长大改名、换身份后的名字，kind 必须填 stage_name
+- 身份称谓如“少爷”“殿下”“师兄”可以记录为 title，但不要把泛称误当作稳定姓名
+- 同一称呼在同一角色下只输出一次；无称呼可收集时输出 []
+- character_name 必须尽量指向同一真实人物，避免把一个人拆成两个角色
 
 ▌branch_links 填写规则（仅 main/pivot 节点填写，sub 填空数组）：
 - 时间段有交叉、或支线由该主线事件直接触发/并行发生的，必须填入
@@ -191,7 +207,7 @@ const CLEAN_PROMPT = `小说分阶段精准压缩
 - 压缩正文是否完整覆盖本段关键剧情、人物关系、时间地点、因果与转折
 - 是否没有用剧情节点替代压缩正文，正文是否没有半截停止
 - <ni_meta> 标签是否成对出现，标签内元信息是否能被插件解析
-- characters 与 plots 是否均存在且为数组；无内容时是否输出 []
+- characters、character_aliases 与 plots 是否均存在且为数组；无内容时是否输出 []
 - plots 中每个节点是否包含 type/title/body/sub_notes/branch_links/time/location/chunk_index
 - branch_links 是否只引用本批次真实存在的 sub title 或【伏笔】xxx
 - 是否没有 Markdown 代码块、道歉、解释或结构外文本`;
@@ -556,6 +572,9 @@ const DEFAULT_SETTINGS = {
     styleSampleLen: 1000,
     styleChunkIdx:  0,
     styleMode:      'sample', // 'sample' | 'manual'
+    userSubEnabled: false,
+    userSubCharIdx: '',
+    userSubAliases: [],
 };
 
 // ============================================================
@@ -1143,6 +1162,9 @@ cfg.globalPrompt = (_gp && _gp.trim()) ? _gp : (extension_settings[EXT_NAME]?.gl
     cfg.styleSampleLen= parseInt(q('#ni-style-sample-len')?.value) || DEFAULT_SETTINGS.styleSampleLen;
     cfg.styleChunkIdx = parseInt(q('#ni-style-chunk-sel')?.value)  || 0;
     cfg.styleMode     = q('#ni-style-mode')?.value                 ?? DEFAULT_SETTINGS.styleMode;
+    cfg.userSubEnabled = q('#ni-user-sub-chk')?.checked ?? (cfg.userSubEnabled ?? DEFAULT_SETTINGS.userSubEnabled);
+    cfg.userSubCharIdx = q('#ni-user-sub-char')?.value ?? (cfg.userSubCharIdx ?? DEFAULT_SETTINGS.userSubCharIdx);
+    if (q('#ni-user-sub-list .ni-user-sub-row')) cfg.userSubAliases = niReadUserSubAliasesFromUI();
 
     saveSettingsDebounced();
 }
@@ -1196,6 +1218,7 @@ function syncSettingsToUI() {
         if (wrap) wrap.style.display = S.styleGuide ? 'block' : 'none';
     }
     niStyleSyncMode();
+    niRenderUserSubUI();
     sv('#ni-chunk-kb',     cfg.chunkKb     ?? DEFAULT_SETTINGS.chunkKb);
     sv('#ni-api-timeout',  cfg.apiTimeoutMin ?? DEFAULT_SETTINGS.apiTimeoutMin);
     sv('#ni-rate-limit',   cfg.apiRateLimit  ?? DEFAULT_SETTINGS.apiRateLimit);
@@ -1241,12 +1264,17 @@ window.niSaveSettings = niSaveSettings;
 // Tab 切换（剧情页）
 // ============================================================
 function niSwitchTab(name, btn) {
+    const tab = ['timeline', 'main', 'sub', 'pivot'].includes(name) ? name : 'timeline';
+    _currentPlotTab = tab;
     // Only switch tabs within the plot tab row (not char tab row)
-    const plotTabRow = q('#ni-pg-plot .ni-tab-row');
-    if (plotTabRow) plotTabRow.querySelectorAll('.ni-tab').forEach(b => b.classList.remove('on'));
-    btn?.classList.add('on');
-    qa('.ni-tp').forEach(p => p.classList.remove('on'));
-    q(`#ni-tp-${name}`)?.classList.add('on');
+    const plotTabRow = q('#ni-pg-plot .ni-plot-tab-row');
+    if (plotTabRow) {
+        plotTabRow.querySelectorAll('.ni-tab[data-tab]').forEach(b => b.classList.remove('on'));
+        (btn || plotTabRow.querySelector(`.ni-tab[data-tab="${tab}"]`))?.classList.add('on');
+    }
+    q('#ni-pg-plot')?.querySelectorAll('.ni-tp').forEach(p => p.classList.remove('on'));
+    q(`#ni-tp-${tab}`)?.classList.add('on');
+    niSyncPlotActionButtons(true);
 }
 window.niSwitchTab = niSwitchTab;
 
@@ -1294,7 +1322,7 @@ function niSyncRoleplayToDepth() {
     const cfg = extension_settings[EXT_NAME] || {};
     const enabled = cfg.pluginEnabled !== false && cfg.roleplayEnabled !== false;
     const promptText = cfg.roleplayPrompt || ROLEPLAY_PROMPT;
-    ta.value = enabled ? promptText : '';
+    ta.value = enabled ? niApplyUserSubstitution(promptText) : '';
     ta.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
@@ -1705,6 +1733,7 @@ async function niStartClean() {
         for (let k = 0; k < S.chunkStatus.length; k++) {
             if (S.chunkStatus[k] === 'done' && S.chunkMeta[k]) {
                 mergeCharacters(S.chunkMeta[k].characters || [], k);
+                mergeCharacterAliases(S.chunkMeta[k].character_aliases || S.chunkMeta[k].aliases || [], k);
                 mergePlots(S.chunkMeta[k].plots || [], k);
             }
         }
@@ -1767,6 +1796,7 @@ async function niStartClean() {
                 S.chunkResults[i] = compressed;
                 S.chunkMeta[i] = meta;  // 保存原始 meta，供续跑重建用
                 mergeCharacters(meta.characters || [], i);
+                mergeCharacterAliases(meta.character_aliases || meta.aliases || [], i);
                 mergePlots(meta.plots || [], i);
                 setChunkStat(i, 'done');
                 success = true;
@@ -1904,8 +1934,12 @@ async function niRunSingleChunk(i) {
             S.plots[type] = (S.plots[type] || []).filter(p => p._chunkIdx !== i);
         });
         S.characters = S.characters.filter(c => c._firstChunkIdx !== i);
+        S.characters.forEach(c => {
+            if (Array.isArray(c.aliases)) c.aliases = c.aliases.filter(a => a._chunkIdx !== i);
+        });
 
         mergeCharacters(meta.characters || [], i);
+        mergeCharacterAliases(meta.character_aliases || meta.aliases || [], i);
         mergePlots(meta.plots || [], i);
 
         // merge 后按 _chunkIdx 重新排序，确保节点插入正确位置
@@ -1998,6 +2032,34 @@ function _isSameChar(a, b) {
     return false;
 }
 
+function niNormalizeCharAlias(raw, chunkIndex, fallbackCharName = '') {
+    const src = typeof raw === 'string' ? { text: raw } : (raw || {});
+    const text = String(src.text || src.name || src.alias || src.title || '').trim();
+    if (!text) return null;
+    return {
+        character_name: String(src.character_name || src.characterName || src.char || fallbackCharName || '').trim(),
+        text,
+        kind: String(src.kind || src.type || 'alias').trim() || 'alias',
+        note: String(src.note || src.desc || '').trim(),
+        _chunkIdx: chunkIndex ?? null,
+    };
+}
+
+function niMergeAliasesIntoChar(charObj, aliases, chunkIndex) {
+    if (!charObj || !Array.isArray(aliases)) return;
+    if (!Array.isArray(charObj.aliases)) charObj.aliases = [];
+    aliases.forEach(raw => {
+        const alias = niNormalizeCharAlias(raw, chunkIndex, charObj.name);
+        if (!alias || alias.text === charObj.name) return;
+        const existing = charObj.aliases.find(a => (a.text || '') === alias.text);
+        if (!existing) {
+            charObj.aliases.push(alias);
+        } else if ((existing._chunkIdx == null) || (alias._chunkIdx != null && alias._chunkIdx < existing._chunkIdx)) {
+            existing._chunkIdx = alias._chunkIdx;
+        }
+    });
+}
+
 function mergeCharacters(incoming, chunkIndex) {
     for (const c of incoming) {
         if (!c.name) continue;
@@ -2009,16 +2071,35 @@ function mergeCharacters(incoming, chunkIndex) {
                 role: c.role || '其他',
                 identity: c.identity || c.bio || '',
                 appearance: c.appearance || '',
+                gender: c.gender || '',
                 personality: c.personality || '',
                 relations: c.relations || '',
+                aliases: [],
                 _firstChunkIdx: chunkIndex ?? null,
                 enabled: isProtag,  // 主角默认开启，其他角色默认关闭，等待阶段开启联动
             });
+            niMergeAliasesIntoChar(S.characters[S.characters.length - 1], c.aliases || c.character_aliases || [], chunkIndex);
         } else {
-            // 同名角色已存在：完全跳过，不覆盖、不录入任何字段
+            niMergeAliasesIntoChar(existing, c.aliases || c.character_aliases || [], chunkIndex);
+            // 同名角色已存在：不覆盖人设字段
             // 人设以首次登场的记录为准，后续段的信息可能已深受剧情演变影响
         }
     }
+}
+
+function mergeCharacterAliases(incoming, chunkIndex) {
+    if (!Array.isArray(incoming) || !incoming.length) return;
+    incoming.forEach(raw => {
+        const alias = niNormalizeCharAlias(raw, chunkIndex);
+        if (!alias) return;
+        const owner = S.characters.find(c =>
+            _isSameChar(c, { name: alias.character_name }) ||
+            _isSameChar(c, { name: alias.text }) ||
+            (Array.isArray(c.aliases) && c.aliases.some(a => (a.text || '') === alias.character_name))
+        );
+        if (!owner) return;
+        niMergeAliasesIntoChar(owner, [alias], chunkIndex);
+    });
 }
 
 // ============================================================
@@ -2057,6 +2138,24 @@ function mergePlots(incoming, chunkIndex) {
 // ============================================================
 // 剧情渲染
 // ============================================================
+function niSyncPlotActionButtons(exitModes = false) {
+    const tab = ['timeline', 'main', 'sub', 'pivot'].includes(_currentPlotTab) ? _currentPlotTab : 'timeline';
+    _currentPlotTab = tab;
+
+    const isTimeline = tab === 'timeline';
+    const delBtn  = q('#ni-plot-del-btn');
+    const editBtn = q('#ni-plot-edit-btn');
+    const linkBtn = q('#ni-plot-link-btn');
+    if (delBtn)  delBtn.style.display  = isTimeline ? 'none' : '';
+    if (editBtn) editBtn.style.display = isTimeline ? 'none' : '';
+    if (linkBtn) linkBtn.style.display = isTimeline ? '' : 'none';
+
+    if (exitModes && isTimeline) {
+        if (_plotDelMode)  niTogglePlotDel();
+        if (_plotEditMode) niTogglePlotEdit();
+    }
+}
+
 function renderPlots() {
     // 记录原始数组下标再排序，确保编辑/删除时能正确定位 S.plots[type][originalIdx]
     const main  = (S.plots.main  || []).map((p, i) => ({ ...p, _originalIdx: i })).sort((a, b) => (a._chunkIdx ?? 0) - (b._chunkIdx ?? 0));
@@ -2071,14 +2170,7 @@ function renderPlots() {
     renderPlotList('ni-tp-sub',   sub,   'ni-bt', '支线');
     renderPlotList('ni-tp-pivot', pivot, 'ni-bc', '转折');
 
-    // 时间轴是默认/首选tab，隐藏删除和编辑按钮
-    const isTimeline = _currentPlotTab === 'timeline';
-    const delBtn  = q('#ni-plot-del-btn');
-    const editBtn = q('#ni-plot-edit-btn');
-    const linkBtn = q('#ni-plot-link-btn');
-    if (delBtn)  delBtn.style.display  = isTimeline ? 'none' : '';
-    if (editBtn) editBtn.style.display = isTimeline ? 'none' : '';
-    if (linkBtn) linkBtn.style.display = isTimeline ? '' : 'none';
+    niSyncPlotActionButtons(false);
 }
 
 // ============================================================
@@ -2482,32 +2574,95 @@ let _plotModalMode = 'add';       // 'add' | 'edit'
 let _plotInsertAt = null;          // null = append | number = insert before this index
 let _currentPlotTab = 'timeline'; // 当前激活tab
 
+function niFindMainParentForSubTitle(subTitle) {
+    if (!subTitle) return '';
+    const main = S.plots.main || [];
+    const mainIdx = main.findIndex(p => Array.isArray(p.branch_links) && p.branch_links.includes(subTitle));
+    if (mainIdx >= 0) return `main:${mainIdx}`;
+    const pivot = S.plots.pivot || [];
+    const pivotIdx = pivot.findIndex(p => Array.isArray(p.branch_links) && p.branch_links.includes(subTitle));
+    return pivotIdx >= 0 ? `pivot:${pivotIdx}` : '';
+}
+
+function niRefreshPlotParentField(type, subTitle = '') {
+    const wrap = q('#ni-plot-modal-parent-wrap');
+    const sel = q('#ni-plot-modal-parent');
+    if (!wrap || !sel) return;
+
+    if (type !== 'sub') {
+        wrap.style.display = 'none';
+        sel.value = '';
+        return;
+    }
+
+    const selected = niFindMainParentForSubTitle(subTitle);
+    const main = S.plots.main || [];
+    const pivot = S.plots.pivot || [];
+    sel.innerHTML = '<option value="">不指定</option>' +
+        main.map((it, i) =>
+            `<option value="main:${i}">主线 ${i + 1}：${niEscHtml((it.title || '').slice(0, 18))}${(it.title || '').length > 18 ? '…' : ''}</option>`
+        ).join('') +
+        pivot.map((it, i) =>
+            `<option value="pivot:${i}">转折 ${i + 1}：${niEscHtml((it.title || '').slice(0, 18))}${(it.title || '').length > 18 ? '…' : ''}</option>`
+        ).join('');
+    sel.value = selected;
+    wrap.style.display = '';
+}
+
+function niSetSubParentLink(subTitle, parentKey, oldSubTitle = '') {
+    const titlesToRemove = [oldSubTitle, subTitle].filter(Boolean);
+    const allParents = [...(S.plots.main || []), ...(S.plots.pivot || [])];
+    allParents.forEach(parent => {
+        if (!Array.isArray(parent.branch_links)) parent.branch_links = [];
+        parent.branch_links = parent.branch_links.filter(link => !titlesToRemove.includes(link));
+    });
+
+    if (!subTitle || !parentKey) return;
+    const [parentType, rawIdx] = String(parentKey).split(':');
+    const parentArr = parentType === 'pivot' ? (S.plots.pivot || []) : (S.plots.main || []);
+    const idx = parseInt(rawIdx, 10);
+    const parent = parentArr[idx];
+    if (!parent) return;
+    if (!Array.isArray(parent.branch_links)) parent.branch_links = [];
+    if (!parent.branch_links.includes(subTitle)) parent.branch_links.push(subTitle);
+}
+
+function niRefreshPlotInsertField(type) {
+    const selWrap = q('#ni-plot-modal-pos-wrap');
+    const sel = q('#ni-plot-modal-pos');
+    if (!selWrap || !sel) return;
+
+    if (_plotModalMode !== 'add') {
+        selWrap.style.display = 'none';
+        return;
+    }
+
+    const currentType = ['main', 'sub', 'pivot'].includes(type) ? type : 'main';
+    const existingItems = S.plots[currentType] || [];
+    sel.innerHTML = '<option value="end">末尾（追加）</option>' +
+        existingItems.map((it, i) =>
+            `<option value="${i}">第 ${i + 1} 位之前（${niEscHtml((it.title || '').slice(0, 12))}${(it.title || '').length > 12 ? '…' : ''}）</option>`
+        ).join('');
+    sel.value = 'end';
+    _plotInsertAt = null;
+    selWrap.style.display = '';
+}
+
 function niOpenPlotModal(mode, type, idx) {
     _plotModalMode = mode;
     const modal = q('#ni-plot-modal');
     if (!modal) return;
+    const currentType = ['main', 'sub', 'pivot'].includes(type) ? type : 'main';
     // 重置type按钮
-    qa('.ni-plot-type-btn').forEach(b => b.classList.toggle('on', b.dataset.ptype === (type || 'main')));
+    qa('.ni-plot-type-btn').forEach(b => b.classList.toggle('on', b.dataset.ptype === currentType));
     if (mode === 'add') {
         q('#ni-plot-modal-title').textContent = '添加事件';
         q('#ni-plot-modal-title-input').value = '';
         q('#ni-plot-modal-body').value = '';
         q('#ni-plot-modal-time').value = '';
         q('#ni-plot-modal-location').value = '';
-        // Populate insert position selector
-        const selWrap = q('#ni-plot-modal-pos-wrap');
-        const sel = q('#ni-plot-modal-pos');
-        if (selWrap && sel) {
-            const currentType = type || 'main';
-            const existingItems = S.plots[currentType] || [];
-            sel.innerHTML = '<option value="end">末尾（追加）</option>' +
-                existingItems.map((it, i) =>
-                    `<option value="${i}">第 ${i + 1} 位之前（${niEscHtml(it.title.slice(0, 12))}${it.title.length > 12 ? '…' : ''}）</option>`
-                ).join('');
-            sel.value = 'end';
-            _plotInsertAt = null;
-            selWrap.style.display = '';
-        }
+        niRefreshPlotParentField(currentType, '');
+        niRefreshPlotInsertField(currentType);
     } else {
         q('#ni-plot-modal-title').textContent = '编辑事件';
         const selWrap = q('#ni-plot-modal-pos-wrap');
@@ -2518,6 +2673,7 @@ function niOpenPlotModal(mode, type, idx) {
         q('#ni-plot-modal-time').value = item.time || '';
         q('#ni-plot-modal-location').value = item.location || '';
         _plotEditTarget = { type, idx };
+        niRefreshPlotParentField(currentType, item.title || '');
     }
     modal.style.display = 'flex';
 }
@@ -2534,6 +2690,7 @@ function niSavePlotModal() {
     const body  = q('#ni-plot-modal-body')?.value.trim() || '';
     const time  = q('#ni-plot-modal-time')?.value.trim() || '';
     const location = q('#ni-plot-modal-location')?.value.trim() || '';
+    const parentKey = q('#ni-plot-modal-parent')?.value ?? '';
     if (_plotModalMode === 'add') {
         if (!S.plots[type]) S.plots[type] = [];
         const newItem = { title, body, time, location, sub_notes: [], branch_links: [] };
@@ -2544,17 +2701,31 @@ function niSavePlotModal() {
         } else {
             S.plots[type].push(newItem);
         }
+        if (type === 'sub') niSetSubParentLink(title, parentKey);
     } else if (_plotEditTarget) {
         const { type: t, idx } = _plotEditTarget;
         // 如果类型改变，移动到新bucket
         if (t !== type) {
             const item = (S.plots[t] || []).splice(idx, 1)[0];
-            item.title = title; item.body = body; item.time = time; item.location = location;
-            if (!S.plots[type]) S.plots[type] = [];
-            S.plots[type].push(item);
+            if (item) {
+                const oldSubTitle = t === 'sub' ? (item.title || '') : '';
+                item.title = title; item.body = body; item.time = time; item.location = location;
+                if (type === 'sub') {
+                    item.branch_links = [];
+                    niSetSubParentLink(title, parentKey, oldSubTitle);
+                } else if (oldSubTitle) {
+                    niSetSubParentLink('', '', oldSubTitle);
+                }
+                if (!S.plots[type]) S.plots[type] = [];
+                S.plots[type].push(item);
+            }
         } else {
             const item = (S.plots[type] || [])[idx];
-            if (item) { item.title = title; item.body = body; item.time = time; item.location = location; }
+            if (item) {
+                const oldSubTitle = type === 'sub' ? (item.title || '') : '';
+                item.title = title; item.body = body; item.time = time; item.location = location;
+                if (type === 'sub') niSetSubParentLink(title, parentKey, oldSubTitle);
+            }
         }
     }
     niSaveSettings();
@@ -2793,6 +2964,7 @@ function renderCharacters() {
         list.prepend(bar);
     }
     niRefreshCharStageSel();
+    niRenderUserSubUI();
 }
 
 function niEditChar(i) {
@@ -3079,6 +3251,259 @@ function getCharFirstStage(c) {
     if (c._firstChunkIdx == null) return null;
     if (S.stageMapN <= 0) return null;
     return S.stageMap[c._firstChunkIdx] ?? S.stageMap[String(c._firstChunkIdx)] ?? null;
+}
+
+function niGetUserSubConfig() {
+    const cfg = extension_settings[EXT_NAME] || {};
+    if (!Array.isArray(cfg.userSubAliases)) cfg.userSubAliases = [];
+    return cfg;
+}
+
+function niUserSubDefaultAliasesForChar(charIdx) {
+    const idx = parseInt(charIdx, 10);
+    const c = S.characters[idx];
+    if (!c?.name) return [];
+    const firstStage = getCharFirstStage(c) || '';
+    const out = [{
+        text: c.name,
+        firstStage,
+        kind: 'primary',
+    }];
+    (Array.isArray(c.aliases) ? c.aliases : []).forEach(alias => {
+        const text = (alias?.text || '').trim();
+        if (!text || text === c.name) return;
+        const aliasStage = getCharFirstStage({ _firstChunkIdx: alias._chunkIdx }) || firstStage;
+        out.push({
+            text,
+            firstStage: aliasStage,
+            kind: alias.kind || 'alias',
+        });
+    });
+    const seen = new Set();
+    return out.filter(alias => {
+        const key = `${alias.text}@@${alias.firstStage}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function niUserSubStageReached(firstStage) {
+    const si = parseInt(firstStage, 10);
+    if (!si || si <= 0 || S.stageMapN <= 0) return true;
+    for (let i = si; i <= S.stageMapN; i++) {
+        if (S.stageStates[i] !== false) return true;
+    }
+    return false;
+}
+
+function niUserSubAliasKey(alias) {
+    return `${alias?.text || ''}@@${alias?.firstStage || ''}`;
+}
+
+function niGetUserSubChatStates() {
+    try {
+        const ctx = getContext();
+        const states = ctx?.chat?.[0]?.ni_user_sub?.aliasStates;
+        return states && typeof states === 'object' ? states : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+async function niSaveUserSubChatStates(states) {
+    try {
+        const ctx = getContext();
+        if (!ctx?.chat?.[0]) return;
+        ctx.chat[0].ni_user_sub = ctx.chat[0].ni_user_sub || {};
+        ctx.chat[0].ni_user_sub.aliasStates = { ...states };
+        if (typeof ctx.saveChat === 'function') await ctx.saveChat();
+    } catch (e) {
+        console.warn('[NI] 用户代入称呼状态保存失败:', e);
+    }
+}
+
+function niGetUserSubAliasOverride(alias) {
+    const states = niGetUserSubChatStates();
+    const key = niUserSubAliasKey(alias);
+    if (Object.prototype.hasOwnProperty.call(states, key)) return !!states[key];
+    if (alias?.state === 'manual_on') return true;
+    if (alias?.state === 'manual_off') return false;
+    return null;
+}
+
+function niUserSubAliasIsActive(alias) {
+    if (!alias?.text) return false;
+    const override = niGetUserSubAliasOverride(alias);
+    if (override !== null) return override;
+    return niUserSubStageReached(alias.firstStage);
+}
+
+function niReadUserSubAliasesFromUI() {
+    const rows = [...qa('#ni-user-sub-list .ni-user-sub-row')];
+    return rows.map(row => {
+        const text = row.querySelector('.ni-user-sub-name')?.value?.trim() || '';
+        const firstStage = row.dataset.firstStage || '';
+        const kind = row.dataset.aliasKind || 'custom';
+        return { text, firstStage, kind };
+    }).filter(a => a.text);
+}
+
+function niReadUserSubAliasFromRow(row) {
+    return {
+        text: row?.querySelector('.ni-user-sub-name')?.value?.trim() || '',
+        firstStage: row?.dataset.firstStage || '',
+    };
+}
+
+async function niSaveUserSubRowState(row) {
+    const alias = niReadUserSubAliasFromRow(row);
+    if (!alias.text) return;
+    const states = { ...niGetUserSubChatStates() };
+    states[niUserSubAliasKey(alias)] = !!row.querySelector('.ni-user-sub-enabled')?.checked;
+    await niSaveUserSubChatStates(states);
+}
+
+async function niMigrateUserSubRowState(row) {
+    const oldKey = row?.dataset.aliasKey || '';
+    const alias = niReadUserSubAliasFromRow(row);
+    const newKey = niUserSubAliasKey(alias);
+    if (!alias.text || !oldKey || oldKey === newKey) return;
+    const states = { ...niGetUserSubChatStates() };
+    if (Object.prototype.hasOwnProperty.call(states, oldKey)) {
+        states[newKey] = states[oldKey];
+        delete states[oldKey];
+        await niSaveUserSubChatStates(states);
+    }
+    row.dataset.aliasKey = newKey;
+}
+
+async function niDeleteUserSubRowState(row) {
+    const oldKey = row?.dataset.aliasKey || '';
+    if (!oldKey) return;
+    const states = { ...niGetUserSubChatStates() };
+    if (Object.prototype.hasOwnProperty.call(states, oldKey)) {
+        delete states[oldKey];
+        await niSaveUserSubChatStates(states);
+    }
+}
+
+function niUserSubStageLabel(firstStage) {
+    const si = parseInt(firstStage, 10);
+    const cnNums = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+    const n = si > 0 && si <= 10 ? cnNums[si] : String(si || '');
+    return si > 0 ? `${n}阶段` : '全程';
+}
+
+function niRenderUserSubUI() {
+    const cfg = niGetUserSubConfig();
+    const chk = q('#ni-user-sub-chk');
+    const state = q('#ni-user-sub-state');
+    const row = q('#ni-user-sub-switch-row');
+    const sel = q('#ni-user-sub-char');
+    const list = q('#ni-user-sub-list');
+    if (!chk || !state || !sel || !list) return;
+
+    const enabled = !!cfg.userSubEnabled;
+    chk.checked = enabled;
+    state.textContent = enabled ? '已启用' : '已关闭';
+    state.style.color = enabled ? '#E07AAC' : 'var(--color-border-secondary, #777)';
+    row?.classList.toggle('ni-switch-off', !enabled);
+
+    const selectedIdx = cfg.userSubCharIdx ?? '';
+    sel.innerHTML = '<option value="">选择角色</option>' +
+        (S.characters || []).map((c, i) =>
+            `<option value="${i}"${String(selectedIdx) === String(i) ? ' selected' : ''}>${niEscHtml(c.name || `角色${i + 1}`)}</option>`
+        ).join('');
+
+    const aliases = (cfg.userSubAliases || []).slice()
+        .sort((a, b) => (parseInt(a.firstStage || 0, 10) || 0) - (parseInt(b.firstStage || 0, 10) || 0));
+    list.innerHTML = aliases.length
+        ? aliases.map((a, i) => {
+            const active = niUserSubAliasIsActive(a);
+            const aliasKey = niUserSubAliasKey(a);
+            const aliasKind = a.kind || 'custom';
+            const stageLabel = niUserSubStageLabel(a.firstStage);
+            return `<div class="ni-user-sub-row" data-row-idx="${i}" data-alias-key="${niEscAttr(aliasKey)}" data-alias-kind="${niEscAttr(aliasKind)}" data-first-stage="${niEscAttr(a.firstStage || '')}">
+              <input class="ni-user-sub-enabled" type="checkbox"${active ? ' checked' : ''} title="是否替换为 <user>">
+              <input class="ni-cef-input ni-user-sub-name" value="${niEscAttr(a.text || '')}" placeholder="称呼">
+              <span class="ni-user-sub-stage-tag">${niEscHtml(stageLabel)}</span>
+              <button class="ni-user-sub-del" title="删除称呼"><i class="ti ti-x"></i></button>
+            </div>`;
+        }).join('')
+        : '<div class="ni-empty" style="padding:8px 0">请选择角色或添加称呼</div>';
+}
+
+async function niSaveUserSubFromUI({ rerender = false } = {}) {
+    const cfg = niGetUserSubConfig();
+    const chk = q('#ni-user-sub-chk');
+    const sel = q('#ni-user-sub-char');
+    if (chk) cfg.userSubEnabled = chk.checked;
+    if (sel) cfg.userSubCharIdx = sel.value;
+    if (q('#ni-user-sub-list')) cfg.userSubAliases = niReadUserSubAliasesFromUI();
+    saveSettingsDebounced();
+    niSyncRoleplayToDepth();
+    if (rerender) niRenderUserSubUI();
+}
+
+function niEscapeRegExp(s) {
+    return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function niGetActiveUserSubNames() {
+    const cfg = niGetUserSubConfig();
+    if (!cfg.userSubEnabled) return [];
+    const seen = new Set();
+    return (cfg.userSubAliases || [])
+        .filter(niUserSubAliasIsActive)
+        .map(a => (a.text || '').trim())
+        .filter(name => name && name !== '<user>' && !/^user$/i.test(name))
+        .sort((a, b) => b.length - a.length)
+        .filter(name => {
+            if (seen.has(name)) return false;
+            seen.add(name);
+            return true;
+        });
+}
+
+function niGetSelectedUserSubCharName() {
+    const cfg = niGetUserSubConfig();
+    const idx = parseInt(cfg.userSubCharIdx, 10);
+    return (S.characters?.[idx]?.name || '').trim();
+}
+
+function niBuildUserSubIdentityPrompt() {
+    const cfg = niGetUserSubConfig();
+    if (!cfg.userSubEnabled) return '';
+
+    const primaryName = niGetSelectedUserSubCharName();
+    const names = [];
+    [primaryName, ...niGetActiveUserSubNames()].forEach(name => {
+        const n = (name || '').trim();
+        if (n && !names.includes(n)) names.push(n);
+    });
+    if (!names.length) return '';
+
+    const displayName = primaryName || names[0];
+    return `[用户代入角色]\n<user>代表原著角色「${displayName}」。以下称呼只作为同一角色的映射：${names.join('、')}。后续正文使用<user>，不要把原名或称呼写成另一个角色。\n[/用户代入角色]`;
+}
+
+function niReplaceOutsideAngleTags(text, pattern, replacement) {
+    return String(text).split(/(<[^>\n]*>)/g).map(part => {
+        if (part.startsWith('<') && part.endsWith('>')) return part;
+        return part.replace(pattern, replacement);
+    }).join('');
+}
+
+function niApplyUserSubstitution(text) {
+    if (typeof text !== 'string' || !text) return text;
+    const names = niGetActiveUserSubNames();
+    if (!names.length) return text;
+    let out = text;
+    names.forEach(name => {
+        out = niReplaceOutsideAngleTags(out, new RegExp(niEscapeRegExp(name), 'g'), '<user>');
+    });
+    return out;
 }
 
 function niToggleCharsByStage(stageIdx, enable) {
@@ -3790,6 +4215,8 @@ function niToggleStage(i) {
     // 强制刷新阶段列表，确保向量化状态标签正确显示
     buildStages();
     updateStageLbl();
+    niRenderUserSubUI();
+    niSyncRoleplayToDepth();
     niSaveSettings();
 }
 window.niToggleStage = niToggleStage;
@@ -4797,7 +5224,8 @@ async function onPromptReady(eventData) {
     }
 
     // 辅助：执行注入，失败则降级到追加 system 消息
-    function doInject(key, content, pos, depth, role) {
+    function doInject(key, content, pos, depth, role, opts = {}) {
+        if (opts.applyUserSub !== false) content = niApplyUserSubstitution(content);
         if (!content.trim()) return;
         if (eventData?.chat && Array.isArray(eventData.chat)) {
             const roleName = role === 1 ? 'user' : (role === 2 ? 'assistant' : 'system');
@@ -4808,6 +5236,11 @@ async function onPromptReady(eventData) {
         } else if (setExtensionPrompt) {
             setExtensionPrompt(key, content, pos, depth, true, role);
         }
+    }
+
+    const userSubIdentityPrompt = niBuildUserSubIdentityPrompt();
+    if (userSubIdentityPrompt) {
+        doInject(`${EXT_NAME}_user_sub`, userSubIdentityPrompt, 0, 0, 0, { applyUserSub: false });
     }
 
     // ① 向量块注入（已向量阶段 → 语义召回）
@@ -6157,6 +6590,67 @@ jQuery(async () => {
     // 世界设定：添加大类
     $app.on('click', '.ni-world-add-cat', () => niWorldAddCat());
 
+    // 用户代入角色
+    $app.on('click', '#ni-user-sub-cfg-btn', () => {
+        niTogglePanel('ni-user-sub-panel', 'ni-user-sub-cfg-btn');
+        niRenderUserSubUI();
+    });
+    $app.on('change', '#ni-user-sub-chk', function() {
+        extension_settings[EXT_NAME].userSubEnabled = this.checked;
+        niSaveUserSubFromUI({ rerender: true });
+    });
+    $app.on('change', '#ni-user-sub-char', async function() {
+        const cfg = niGetUserSubConfig();
+        cfg.userSubCharIdx = this.value;
+        cfg.userSubAliases = niUserSubDefaultAliasesForChar(this.value);
+        await niSaveUserSubChatStates({});
+        saveSettingsDebounced();
+        niSyncRoleplayToDepth();
+        niRenderUserSubUI();
+    });
+    $app.on('click', '#ni-user-sub-add', async function() {
+        const cfg = niGetUserSubConfig();
+        const c = S.characters[parseInt(cfg.userSubCharIdx, 10)] || null;
+        cfg.userSubAliases = niReadUserSubAliasesFromUI();
+        cfg.userSubAliases.push({
+            text: '',
+            firstStage: c ? (getCharFirstStage(c) || '') : '',
+            kind: 'custom',
+        });
+        saveSettingsDebounced();
+        niSyncRoleplayToDepth();
+        niRenderUserSubUI();
+        const last = q('#ni-user-sub-list .ni-user-sub-row:last-child .ni-user-sub-name');
+        last?.focus();
+    });
+    $app.on('click', '#ni-user-sub-reset', async function() {
+        await niSaveUserSubChatStates({});
+        niRenderUserSubUI();
+        niSyncRoleplayToDepth();
+    });
+    $app.on('change', '.ni-user-sub-enabled', async function() {
+        const row = this.closest('.ni-user-sub-row');
+        await niSaveUserSubRowState(row);
+        saveSettingsDebounced();
+        niSyncRoleplayToDepth();
+    });
+    $app.on('input', '.ni-user-sub-name', () => {
+        niSaveUserSubFromUI();
+    });
+    $app.on('change', '.ni-user-sub-name', async function() {
+        const row = this.closest('.ni-user-sub-row');
+        await niMigrateUserSubRowState(row);
+        niSaveUserSubFromUI();
+        await niSaveUserSubRowState(row);
+        niSyncRoleplayToDepth();
+    });
+    $app.on('click', '.ni-user-sub-del', async function() {
+        const row = this.closest('.ni-user-sub-row');
+        await niDeleteUserSubRowState(row);
+        row?.remove();
+        niSaveUserSubFromUI({ rerender: true });
+    });
+
     // 底栏导航
     $app.on('click', '.ni-nav-btn', function() {
         const page = $(this).data('page');
@@ -6179,18 +6673,7 @@ jQuery(async () => {
     // 剧情tab切换时记录当前tab，并根据是否时间轴隐藏删除/编辑按钮
     $app.on('click', '.ni-plot-tab-row .ni-tab[data-tab]', function() {
         _currentPlotTab = $(this).data('tab') || 'timeline';
-        const isTimeline = _currentPlotTab === 'timeline';
-        const delBtn  = q('#ni-plot-del-btn');
-        const editBtn = q('#ni-plot-edit-btn');
-        const linkBtn = q('#ni-plot-link-btn');
-        if (delBtn)  delBtn.style.display  = isTimeline ? 'none' : '';
-        if (editBtn) editBtn.style.display = isTimeline ? 'none' : '';
-        if (linkBtn) linkBtn.style.display = isTimeline ? '' : 'none';
-        // 退出删除/编辑模式
-        if (isTimeline) {
-            if (_plotDelMode)  niTogglePlotDel();
-            if (_plotEditMode) niTogglePlotEdit();
-        }
+        niSyncPlotActionButtons(true);
     });
 
     $app.on('click', '#ni-plot-link-btn', () => niRepairBranchLinks());
@@ -6214,6 +6697,9 @@ jQuery(async () => {
     $app.on('click', '.ni-plot-type-btn', function() {
         qa('.ni-plot-type-btn').forEach(b => b.classList.remove('on'));
         this.classList.add('on');
+        const type = $(this).data('ptype');
+        niRefreshPlotParentField(type, q('#ni-plot-modal-title-input')?.value.trim() || '');
+        niRefreshPlotInsertField(type);
     });
     // 删除模式：点击事件卡选中
     $app.on('click', '.ni-plot-del-mode .ni-plot-item, .ni-plot-del-mode .ni-tl-item', function(e) {
@@ -6346,14 +6832,8 @@ jQuery(async () => {
     // Timeline branch link: jump to sub tab and expand that sub plot
     $app.on('click', '.ni-tl-branch-link', function() {
         const subIdx = parseInt($(this).data('sub-idx'));
-        const plotTabRow = q('#ni-pg-plot .ni-tab-row');
-        if (plotTabRow) {
-            plotTabRow.querySelectorAll('.ni-tab').forEach(b => b.classList.remove('on'));
-            const subTabBtn = plotTabRow.querySelector('[data-tab="sub"]');
-            subTabBtn?.classList.add('on');
-        }
-        qa('.ni-tp').forEach(p => p.classList.remove('on'));
-        q('#ni-tp-sub')?.classList.add('on');
+        const subTabBtn = q('#ni-pg-plot .ni-plot-tab-row .ni-tab[data-tab="sub"]');
+        niSwitchTab('sub', subTabBtn);
         setTimeout(() => {
             const items = qa('#ni-tp-sub .ni-plot-item');
             items.forEach(el => el.classList.remove('open'));
@@ -8095,7 +8575,7 @@ async function niTbGenerateInfer() {
             .replace('{MSG_COUNT}',      String(recentMsgs.split('\n').length))
             + niTbGetImmersionAppend(cfg);
 
-        const raw = await callCleanApi([{ role: 'user', content: prompt }]);
+        const raw = await callCleanApi([{ role: 'user', content: niApplyUserSubstitution(prompt) }]);
 
         // 解析 JSON，兼容带 ```json 包裹的情况
         let data;
@@ -8107,6 +8587,12 @@ async function niTbGenerateInfer() {
         }
 
         if (!Array.isArray(data)) throw new Error('返回格式不是数组');
+        data = data.map(item => ({
+            ...item,
+            title: niApplyUserSubstitution(item.title || ''),
+            desc: niApplyUserSubstitution(item.desc || item.description || ''),
+            description: niApplyUserSubstitution(item.description || item.desc || ''),
+        }));
 
         // 保存结果供弹窗读取
         S.tbLastInfer = data;
@@ -8385,7 +8871,7 @@ function niTbBindBarEvents() {
     document.getElementById('ni-tb-infer-list')?.addEventListener('click', (e) => {
         const item = e.target.closest('.ni-tb-infer-item');
         if (!item) return;
-        const desc = item.dataset.desc || '';
+        const desc = niApplyUserSubstitution(item.dataset.desc || '');
         const ta   = document.getElementById('send_textarea') || document.querySelector('#send_textarea');
         if (ta) {
             ta.value = desc;
@@ -8749,6 +9235,8 @@ jQuery(document).ready(function () {
             } catch (_) {}
 
             const _inject = (slotKey, content) => {
+                content = niApplyUserSubstitution(content);
+                if (!content.trim()) return;
                 if (eventData?.chat && Array.isArray(eventData.chat)) {
                     const msg = { role: 'system', content };
                     const lastUserIdx = eventData.chat.map(m => m?.role).lastIndexOf('user');
@@ -8814,17 +9302,20 @@ jQuery(document).ready(function () {
         _tbAdvanceSent.clear();
         S.tbSectionOpen = { done: false, active: true, todo: false };
         niTbLoadState();
+        niRenderUserSubUI();
+        niSyncRoleplayToDepth();
         // 短暂延迟等对话 DOM 就绪
         setTimeout(() => niTbRenderStoryBar(), 300);
     });
 
-    // 设置页打开时初始化穿书模式 UI
+    // 剧情页打开时初始化穿书模式 UI；保留设置页触发兼容旧布局
     const $app = typeof $ !== 'undefined' ? $(document.getElementById('ni-app') || document) : null;
     if ($app) {
-        $app.on('click', '.ni-nav-btn[data-page="settings"]', () => {
+        $app.on('click', '.ni-nav-btn[data-page="plot"], .ni-nav-btn[data-page="settings"]', () => {
             setTimeout(() => niTbInitSettingsUI(), 50);
         });
     }
+    setTimeout(() => niTbInitSettingsUI(), 100);
 
     // niConfirmStageMap 后刷新状态栏（劫持已暴露的 window.niConfirmStageMap）
     const _origConfirm = window.niConfirmStageMap;
@@ -9334,7 +9825,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
         q('ni-pop-infer-items')?.addEventListener('click', (e) => {
             const item = e.target.closest('.ni-infer-item');
             if (!item) return;
-            const desc = item?.dataset.desc || '';
+            const desc = niApplyUserSubstitution(item?.dataset.desc || '');
             const ta = document.getElementById('send_textarea') || document.querySelector('#send_textarea');
             if (ta) {
                 ta.value = desc;
@@ -9359,15 +9850,17 @@ console.log('[NI-TB] 穿书模式模块已加载');
                 items.innerHTML = '';
                 results.forEach((d, i) => {
                     const tagMap = { canon:'ni-itag-canon', diverge:'ni-itag-diverge', break:'ni-itag-break' };
+                    const title = niApplyUserSubstitution(d.title || '');
+                    const desc = niApplyUserSubstitution(d.desc || d.description || '');
                     const el = document.createElement('div');
                     el.className = 'ni-infer-item ni-fade-in';
-                    el.dataset.desc = d.desc || d.description || '';
+                    el.dataset.desc = desc;
                     el.innerHTML =
                         '<div class="ni-infer-idx">' + (i+1) + '</div>' +
                         '<div class="ni-infer-body">' +
                           '<span class="ni-infer-tag ' + (tagMap[d.tag] || 'ni-itag-canon') + '">' + niPopEsc(d.tagLabel || d.tl || d.label || '') + '</span>' +
-                          '<div class="ni-infer-title">' + niPopEsc(d.title) + '</div>' +
-                          '<div class="ni-infer-desc">' + niPopEsc(d.desc || d.description || '') + '</div>' +
+                          '<div class="ni-infer-title">' + niPopEsc(title) + '</div>' +
+                          '<div class="ni-infer-desc">' + niPopEsc(desc) + '</div>' +
                         '</div>';
                     items.appendChild(el);
                 });

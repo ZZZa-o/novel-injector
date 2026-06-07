@@ -1156,6 +1156,185 @@ select.ni-modal-input {
 .ni-modal-cancel  { font-size: 12px; padding: 5px 12px; border: 0.5px solid var(--SmartThemeBorderColor); border-radius: 4px; background: var(--SmartThemeChatTintColor); cursor: pointer; color: var(--SmartThemeBodyColor); }
 .ni-modal-confirm { font-size: 12px; padding: 5px 12px; border: none; border-radius: 4px; background: #A0445E; color: #fff; cursor: pointer; }
 
+/* 用户代入角色 */
+.ni-user-sub-card {
+  padding: 9px 13px;
+}
+.ni-user-sub-wrap {
+  margin-bottom: 0;
+}
+.ni-user-sub-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+.ni-user-sub-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 92px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+.ni-user-sub-title i {
+  font-size: 13px;
+}
+.ni-user-sub-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 1px 0 0 17px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+  opacity: .82;
+}
+.ni-user-sub-note i {
+  flex: none;
+  font-size: 12px;
+}
+#ni-user-sub-switch-row {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  flex: none;
+}
+#ni-user-sub-switch-row input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+#ni-user-sub-switch-row .ni-switch-wrap {
+  gap: 4px;
+}
+#ni-user-sub-switch-row .ni-switch-track {
+  width: 30px;
+  height: 16px;
+  border-radius: 8px;
+}
+#ni-user-sub-switch-row .ni-switch-knob {
+  top: 2px;
+  left: 16px;
+  width: 12px;
+  height: 12px;
+}
+#ni-user-sub-switch-row.ni-switch-off .ni-switch-track .ni-switch-knob {
+  left: 2px;
+}
+#ni-user-sub-switch-row .ni-switch-txt {
+  min-width: 30px;
+  font-size: 11px;
+}
+#ni-user-sub-cfg-btn {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+}
+#ni-user-sub-panel {
+  margin-top: 6px;
+  margin-bottom: 0;
+  padding: 8px;
+}
+.ni-user-sub-grid {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.ni-user-sub-grid .ni-cef-label {
+  margin: 0;
+  font-size: 12px;
+  line-height: 26px;
+}
+.ni-user-sub-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.ni-user-sub-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto 24px;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+}
+#ni-user-sub-char,
+.ni-user-sub-name {
+  height: 26px;
+  min-height: 26px;
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  box-sizing: border-box;
+}
+.ni-user-sub-stage-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid rgba(224, 122, 172, .42);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  background: rgba(224, 122, 172, .08);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.ni-user-sub-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: #A0445E;
+  cursor: pointer;
+}
+.ni-user-sub-del {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  font-size: 13px;
+}
+.ni-user-sub-del:hover {
+  background: var(--color-background-secondary);
+  color: #A0445E;
+}
+.ni-user-sub-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+#ni-user-sub-add,
+#ni-user-sub-reset {
+  min-height: 24px;
+  height: 24px;
+  padding: 2px 7px;
+  font-size: 11px;
+}
+#ni-user-sub-reset {
+  opacity: .86;
+}
+
 /* ── 角色 tab 行 + 全开/全关按钮（新紧凑工具栏） ── */
 .ni-char-toolbar {
   background: var(--color-background-primary);

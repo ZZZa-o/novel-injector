@@ -440,6 +440,130 @@
         </div>
       </div>
 
+      <!-- 2. 穿书模式 -->
+      <div class="ni-card">
+        <div class="ni-ctitle" style="position:relative">
+          <span class="ni-ctitle-label" style="min-width:65px"><i class="ti ti-book-2"></i>穿书模式</span>
+          <label class="ni-switch-row ni-switch-off" id="ni-tb-switch-row" style="margin:0;padding:0;border:none;background:none;display:inline-flex;align-items:center;gap:6px;cursor:pointer;flex:none;position:absolute;left:80px">
+            <span class="ni-switch-wrap" style="display:inline-flex;align-items:center;gap:4px">
+              <input type="checkbox" id="ni-tb-chk" style="position:absolute;opacity:0;width:0;height:0">
+              <span class="ni-switch-track"><span class="ni-switch-knob"></span></span>
+              <span class="ni-switch-txt" id="ni-tb-state" style="color:#E07AAC">已关闭</span>
+            </span>
+          </label>
+          <button class="ni-icon-btn" id="ni-tb-cfg-btn" title="穿书设置" style="margin-left:auto"><i class="ti ti-settings"></i></button>
+          <button class="ni-icon-btn" id="ni-tb-prompt-btn" title="编辑提示词"><i class="ti ti-code"></i></button>
+        </div>
+        <p class="ni-desc" style="margin-top:6px"><i class="ti ti-alert-circle" style="font-size:12px;margin-right:3px;vertical-align:-1px"></i>在正文状态栏中管理剧情进度。AI 将根据节点完成情况自动推进剧情。</p>
+
+        <!-- 设置面板 -->
+        <div class="ni-api-panel" id="ni-tb-cfg-panel">
+          <div class="ni-field" style="margin-bottom:0">
+            <label style="margin-bottom:8px"><i class="ti ti-layout-list" style="font-size:12px;margin-right:4px;vertical-align:-1px"></i>剧情进度显示方式</label>
+            <div style="display:flex;align-items:center;gap:16px">
+              <label class="ni-toggle-label">
+                <input type="checkbox" id="ni-tb-display-statusbar">
+                <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
+                <span>状态栏</span>
+              </label>
+              <label class="ni-toggle-label">
+                <input type="checkbox" id="ni-tb-display-popup">
+                <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
+                <span>弹窗</span>
+              </label>
+            </div>
+          </div>
+          <div class="ni-field" style="margin-top:10px;margin-bottom:0">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <label style="display:flex;align-items:center;gap:5px">
+                <i class="ti ti-tag" style="font-size:12px"></i>归纳
+                <span style="font-size:10px;color:var(--color-text-secondary);font-weight:400">每轮附加召回标签</span>
+              </label>
+              <label class="ni-toggle-wrap">
+                <input type="checkbox" id="ni-tb-query-mode">
+                <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
+              </label>
+            </div>
+            <div style="font-size:11px;color:var(--color-text-secondary);margin-top:6px;line-height:1.6">
+              ① 开启后推进/持续提示词末尾自动追加归纳指令，AI 每次回复生成
+              <code style="background:rgba(0,0,0,.08);padding:1px 4px;border-radius:3px">&lt;ni_query&gt;人物 | 地点 | 事件&lt;/ni_query&gt;</code>标签。<br>
+              ② 自动将 <code style="background:rgba(0,0,0,.08);padding:1px 4px;border-radius:3px">ni_query</code> 追加到「召回时提取的消息内容」，关闭时自动移除。<br>
+              ③ 标签对用户不可见，不影响正文阅读。④ 加权召回始终生效，与本开关无关。
+            </div>
+          </div>
+          <div class="ni-field" style="margin-top:10px;margin-bottom:0">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <label style="display:flex;align-items:center;gap:5px">
+                <i class="ti ti-eye" style="font-size:12px"></i>沉浸
+                <span style="font-size:10px;color:var(--color-text-secondary);font-weight:400">仅写 &lt;user&gt; 已知信息</span>
+              </label>
+              <label class="ni-toggle-wrap">
+                <input type="checkbox" id="ni-tb-immersion-mode">
+                <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
+              </label>
+            </div>
+            <div style="font-size:11px;color:var(--color-text-secondary);margin-top:6px;line-height:1.6">
+              ① 开启后为穿书开场、推进、持续和推演追加沉浸边界。<br>
+              ② AI 仍可用后台资料维持因果，但正文只写 &lt;user&gt; 已感知、被告知或可合理推断的内容。<br>
+              ③ 未揭示的姓名、身份、关系和秘密会通过剧情内线索自然出现，避免 &lt;user&gt; 天然全知。
+            </div>
+          </div>
+        </div>
+
+        <!-- 提示词面板 -->
+        <div class="ni-prompt-box" id="ni-tb-pb">
+          <div class="ni-pt-wrap" style="flex-direction:column;gap:10px">
+
+            <!-- 推进提示词 -->
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-player-play" style="font-size:11px"></i> AI 推进提示词（节点切换时一次性注入）</label>
+                <button class="ni-pt-reset" id="ni-tb-advance-reset" title="恢复默认" style="position:static;opacity:.6"><i class="ti ti-rotate"></i></button>
+              </div>
+              <textarea id="ni-tb-advance-prompt" class="ni-pt-textarea" rows="7" spellcheck="false" style="font-size:11px;line-height:1.6;padding:8px 10px;border:.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-secondary);color:var(--color-text-primary);resize:vertical;width:100%;font-family:inherit"></textarea>
+            </div>
+
+            <!-- 持续提示词 -->
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-refresh" style="font-size:11px"></i> 持续提示词（每条消息都注入）</label>
+                <button class="ni-pt-reset" id="ni-tb-ongoing-reset" title="恢复默认" style="position:static;opacity:.6"><i class="ti ti-rotate"></i></button>
+              </div>
+              <textarea id="ni-tb-ongoing-prompt" class="ni-pt-textarea" rows="4" spellcheck="false" style="font-size:11px;line-height:1.6;padding:8px 10px;border:.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-secondary);color:var(--color-text-primary);resize:vertical;width:100%;font-family:inherit"></textarea>
+            </div>
+
+            <!-- 归纳提示词 -->
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-tag" style="font-size:11px"></i> 归纳提示词（归纳开关开启时追加）</label>
+                <button class="ni-pt-reset" id="ni-tb-query-reset" title="恢复默认" style="position:static;opacity:.6"><i class="ti ti-rotate"></i></button>
+              </div>
+              <textarea id="ni-tb-query-prompt" class="ni-pt-textarea" rows="4" spellcheck="false" style="font-size:11px;line-height:1.6;padding:8px 10px;border:.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-secondary);color:var(--color-text-primary);resize:vertical;width:100%;font-family:inherit"></textarea>
+            </div>
+
+            <!-- 沉浸提示词 -->
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-eye" style="font-size:11px"></i> 沉浸提示词（沉浸开关开启时追加）</label>
+                <button class="ni-pt-reset" id="ni-tb-immersion-reset" title="恢复默认" style="position:static;opacity:.6"><i class="ti ti-rotate"></i></button>
+              </div>
+              <textarea id="ni-tb-immersion-prompt" class="ni-pt-textarea" rows="7" spellcheck="false" style="font-size:11px;line-height:1.6;padding:8px 10px;border:.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-secondary);color:var(--color-text-primary);resize:vertical;width:100%;font-family:inherit"></textarea>
+            </div>
+
+            <!-- 推演提示词 -->
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-chart-line" style="font-size:11px"></i> 后文推演提示词</label>
+                <button class="ni-pt-reset" id="ni-tb-infer-reset" title="恢复默认" style="position:static;opacity:.6"><i class="ti ti-rotate"></i></button>
+              </div>
+              <div style="font-size:11px;color:var(--color-text-secondary);margin-top:-2px;margin-bottom:4px;text-align:center;">感谢墨舞@hhain666_74563老师授权的净化规则</div>
+              <textarea id="ni-tb-infer-prompt" class="ni-pt-textarea" rows="7" spellcheck="false" style="font-size:11px;line-height:1.6;padding:8px 10px;border:.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-secondary);color:var(--color-text-primary);resize:vertical;width:100%;font-family:inherit"></textarea>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
       <!-- Plot List Card -->
       <!-- World Settings Card -->
       <div class="ni-card" id="ni-world-card">
@@ -537,6 +661,12 @@
                 <input class="ni-modal-input" id="ni-plot-modal-location" placeholder="如：皇宫">
               </div>
             </div>
+            <div class="ni-cef-field" id="ni-plot-modal-parent-wrap" style="display:none">
+              <label class="ni-cef-label">关联剧情</label>
+              <select class="ni-modal-input" id="ni-plot-modal-parent" style="cursor:pointer">
+                <option value="">不指定</option>
+              </select>
+            </div>
             <div class="ni-cef-field" id="ni-plot-modal-pos-wrap">
               <label class="ni-cef-label">插入位置</label>
               <select class="ni-modal-input" id="ni-plot-modal-pos" style="cursor:pointer">
@@ -566,6 +696,33 @@
 
     <!-- ========== PAGE: CHARACTERS ========== -->
     <div class="ni-page" id="ni-pg-char">
+      <div class="ni-card ni-user-sub-card">
+        <div class="ni-user-sub-wrap">
+          <div class="ni-user-sub-head">
+            <span class="ni-user-sub-title"><i class="ti ti-user-scan"></i>用户代入角色</span>
+            <label class="ni-switch-row ni-switch-off" id="ni-user-sub-switch-row">
+              <span class="ni-switch-wrap">
+                <input type="checkbox" id="ni-user-sub-chk">
+                <span class="ni-switch-track"><span class="ni-switch-knob"></span></span>
+                <span class="ni-switch-txt" id="ni-user-sub-state">已关闭</span>
+              </span>
+            </label>
+            <button class="ni-icon-btn" id="ni-user-sub-cfg-btn" title="用户代入设置"><i class="ti ti-settings"></i></button>
+          </div>
+          <div class="ni-user-sub-note"><i class="ti ti-info-circle"></i><span>将选中角色及勾选称呼在注入时替换为 &lt;user&gt;，原文与向量数据不变。</span></div>
+          <div class="ni-api-panel" id="ni-user-sub-panel">
+            <div class="ni-user-sub-grid">
+              <label class="ni-cef-label">代入角色</label>
+              <select class="ni-cef-input ni-cef-select" id="ni-user-sub-char"></select>
+            </div>
+            <div class="ni-user-sub-list" id="ni-user-sub-list"></div>
+            <div class="ni-user-sub-actions">
+              <button class="ni-char-edit-btn" id="ni-user-sub-add"><i class="ti ti-plus"></i>添加称呼</button>
+              <button class="ni-char-edit-btn" id="ni-user-sub-reset"><i class="ti ti-refresh"></i>重置本聊天勾选</button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="ni-card">
         <div class="ni-ctitle" id="ni-char-card-title">
           <span class="ni-ctitle-label"><i class="ti ti-users"></i>角色人设</span>
@@ -705,130 +862,6 @@
         <div class="ni-pt-wrap">
           <textarea id="ni-global-pt-content" class="ni-pt-textarea" spellcheck="false"></textarea>
           <button class="ni-pt-reset" id="ni-global-pt-reset" title="恢复默认提示词"><i class="ti ti-rotate"></i></button>
-        </div>
-      </div>
-
-      <!-- 2. 穿书模式 -->
-      <div class="ni-card">
-        <div class="ni-ctitle" style="position:relative">
-          <span class="ni-ctitle-label" style="min-width:65px"><i class="ti ti-book-2"></i>穿书模式</span>
-          <label class="ni-switch-row ni-switch-off" id="ni-tb-switch-row" style="margin:0;padding:0;border:none;background:none;display:inline-flex;align-items:center;gap:6px;cursor:pointer;flex:none;position:absolute;left:80px">
-            <span class="ni-switch-wrap" style="display:inline-flex;align-items:center;gap:4px">
-              <input type="checkbox" id="ni-tb-chk" style="position:absolute;opacity:0;width:0;height:0">
-              <span class="ni-switch-track"><span class="ni-switch-knob"></span></span>
-              <span class="ni-switch-txt" id="ni-tb-state" style="color:#E07AAC">已关闭</span>
-            </span>
-          </label>
-          <button class="ni-icon-btn" id="ni-tb-cfg-btn" title="穿书设置" style="margin-left:auto"><i class="ti ti-settings"></i></button>
-          <button class="ni-icon-btn" id="ni-tb-prompt-btn" title="编辑提示词"><i class="ti ti-code"></i></button>
-        </div>
-        <p class="ni-desc" style="margin-top:6px"><i class="ti ti-alert-circle" style="font-size:12px;margin-right:3px;vertical-align:-1px"></i>在正文状态栏中管理剧情进度。AI 将根据节点完成情况自动推进剧情。</p>
-
-        <!-- 设置面板 -->
-        <div class="ni-api-panel" id="ni-tb-cfg-panel">
-          <div class="ni-field" style="margin-bottom:0">
-            <label style="margin-bottom:8px"><i class="ti ti-layout-list" style="font-size:12px;margin-right:4px;vertical-align:-1px"></i>剧情进度显示方式</label>
-            <div style="display:flex;align-items:center;gap:16px">
-              <label class="ni-toggle-label">
-                <input type="checkbox" id="ni-tb-display-statusbar">
-                <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
-                <span>状态栏</span>
-              </label>
-              <label class="ni-toggle-label">
-                <input type="checkbox" id="ni-tb-display-popup">
-                <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
-                <span>弹窗</span>
-              </label>
-            </div>
-          </div>
-          <div class="ni-field" style="margin-top:10px;margin-bottom:0">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <label style="display:flex;align-items:center;gap:5px">
-                <i class="ti ti-tag" style="font-size:12px"></i>归纳
-                <span style="font-size:10px;color:var(--color-text-secondary);font-weight:400">每轮附加召回标签</span>
-              </label>
-              <label class="ni-toggle-wrap">
-                <input type="checkbox" id="ni-tb-query-mode">
-                <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
-              </label>
-            </div>
-            <div style="font-size:11px;color:var(--color-text-secondary);margin-top:6px;line-height:1.6">
-              ① 开启后推进/持续提示词末尾自动追加归纳指令，AI 每次回复生成
-              <code style="background:rgba(0,0,0,.08);padding:1px 4px;border-radius:3px">&lt;ni_query&gt;人物 | 地点 | 事件&lt;/ni_query&gt;</code>标签。<br>
-              ② 自动将 <code style="background:rgba(0,0,0,.08);padding:1px 4px;border-radius:3px">ni_query</code> 追加到「召回时提取的消息内容」，关闭时自动移除。<br>
-              ③ 标签对用户不可见，不影响正文阅读。④ 加权召回始终生效，与本开关无关。
-            </div>
-          </div>
-          <div class="ni-field" style="margin-top:10px;margin-bottom:0">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <label style="display:flex;align-items:center;gap:5px">
-                <i class="ti ti-eye" style="font-size:12px"></i>沉浸
-                <span style="font-size:10px;color:var(--color-text-secondary);font-weight:400">仅写 &lt;user&gt; 已知信息</span>
-              </label>
-              <label class="ni-toggle-wrap">
-                <input type="checkbox" id="ni-tb-immersion-mode">
-                <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
-              </label>
-            </div>
-            <div style="font-size:11px;color:var(--color-text-secondary);margin-top:6px;line-height:1.6">
-              ① 开启后为穿书开场、推进、持续和推演追加沉浸边界。<br>
-              ② AI 仍可用后台资料维持因果，但正文只写 &lt;user&gt; 已感知、被告知或可合理推断的内容。<br>
-              ③ 未揭示的姓名、身份、关系和秘密会通过剧情内线索自然出现，避免 &lt;user&gt; 天然全知。
-            </div>
-          </div>
-        </div>
-
-        <!-- 提示词面板 -->
-        <div class="ni-prompt-box" id="ni-tb-pb">
-          <div class="ni-pt-wrap" style="flex-direction:column;gap:10px">
-
-            <!-- 推进提示词 -->
-            <div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-                <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-player-play" style="font-size:11px"></i> AI 推进提示词（节点切换时一次性注入）</label>
-                <button class="ni-pt-reset" id="ni-tb-advance-reset" title="恢复默认" style="position:static;opacity:.6"><i class="ti ti-rotate"></i></button>
-              </div>
-              <textarea id="ni-tb-advance-prompt" class="ni-pt-textarea" rows="7" spellcheck="false" style="font-size:11px;line-height:1.6;padding:8px 10px;border:.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-secondary);color:var(--color-text-primary);resize:vertical;width:100%;font-family:inherit"></textarea>
-            </div>
-
-            <!-- 持续提示词 -->
-            <div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-                <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-refresh" style="font-size:11px"></i> 持续提示词（每条消息都注入）</label>
-                <button class="ni-pt-reset" id="ni-tb-ongoing-reset" title="恢复默认" style="position:static;opacity:.6"><i class="ti ti-rotate"></i></button>
-              </div>
-              <textarea id="ni-tb-ongoing-prompt" class="ni-pt-textarea" rows="4" spellcheck="false" style="font-size:11px;line-height:1.6;padding:8px 10px;border:.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-secondary);color:var(--color-text-primary);resize:vertical;width:100%;font-family:inherit"></textarea>
-            </div>
-
-            <!-- 归纳提示词 -->
-            <div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-                <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-tag" style="font-size:11px"></i> 归纳提示词（归纳开关开启时追加）</label>
-                <button class="ni-pt-reset" id="ni-tb-query-reset" title="恢复默认" style="position:static;opacity:.6"><i class="ti ti-rotate"></i></button>
-              </div>
-              <textarea id="ni-tb-query-prompt" class="ni-pt-textarea" rows="4" spellcheck="false" style="font-size:11px;line-height:1.6;padding:8px 10px;border:.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-secondary);color:var(--color-text-primary);resize:vertical;width:100%;font-family:inherit"></textarea>
-            </div>
-
-            <!-- 沉浸提示词 -->
-            <div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-                <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-eye" style="font-size:11px"></i> 沉浸提示词（沉浸开关开启时追加）</label>
-                <button class="ni-pt-reset" id="ni-tb-immersion-reset" title="恢复默认" style="position:static;opacity:.6"><i class="ti ti-rotate"></i></button>
-              </div>
-              <textarea id="ni-tb-immersion-prompt" class="ni-pt-textarea" rows="7" spellcheck="false" style="font-size:11px;line-height:1.6;padding:8px 10px;border:.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-secondary);color:var(--color-text-primary);resize:vertical;width:100%;font-family:inherit"></textarea>
-            </div>
-
-            <!-- 推演提示词 -->
-            <div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-                <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-chart-line" style="font-size:11px"></i> 后文推演提示词</label>
-                <button class="ni-pt-reset" id="ni-tb-infer-reset" title="恢复默认" style="position:static;opacity:.6"><i class="ti ti-rotate"></i></button>
-              </div>
-              <div style="font-size:11px;color:var(--color-text-secondary);margin-top:-2px;margin-bottom:4px;text-align:center;">感谢墨舞@hhain666_74563老师授权的净化规则</div>
-              <textarea id="ni-tb-infer-prompt" class="ni-pt-textarea" rows="7" spellcheck="false" style="font-size:11px;line-height:1.6;padding:8px 10px;border:.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-secondary);color:var(--color-text-primary);resize:vertical;width:100%;font-family:inherit"></textarea>
-            </div>
-
-          </div>
         </div>
       </div>
 
