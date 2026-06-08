@@ -476,6 +476,7 @@ novel-injector/
    ├─ pinyin-utils.js
    ├─ vector-utils.js
    ├─ zip-utils.js
+   ├─ theme-editor.js
    └─ theme-utils.js
 ```
 
