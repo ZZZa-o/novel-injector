@@ -68,7 +68,7 @@
               <label>API 端点</label>
               <span id="ni-stream-btn" title="启用后以流式（SSE）方式接收响应" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;user-select:none;color:var(--color-text-secondary)">
                 <input type="checkbox" id="ni-clean-stream" style="display:none">
-                <span id="ni-stream-pill" style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;background:var(--color-border-secondary);color:var(--color-text-secondary);transition:background .2s,color .2s">关</span>
+                <span id="ni-stream-pill" style="display:inline-block;font-size:11px;font-weight:700;transition:color .2s;color:var(--ni-primary,#A0445E)">关</span>
                 流式输出
               </span>
             </div>
@@ -91,7 +91,7 @@
         </div>
         <div class="ni-prompt-box" id="ni-pb">
           <div class="ni-pt-wrap">
-            <textarea id="ni-pt-content" class="ni-pt-textarea" spellcheck="false"></textarea>
+            <textarea id="ni-pt-content" class="ni-pt-textarea" rows="7" spellcheck="false"></textarea>
             <button class="ni-pt-reset" id="ni-pt-reset" title="恢复默认提示词"><i class="ti ti-rotate"></i></button>
           </div>
         </div>
@@ -157,7 +157,7 @@
         <!-- 提示词编辑框 -->
         <div class="ni-prompt-box" id="ni-style-pb">
           <div class="ni-pt-wrap">
-            <textarea id="ni-style-pt-content" class="ni-pt-textarea" spellcheck="false"></textarea>
+            <textarea id="ni-style-pt-content" class="ni-pt-textarea" rows="7" spellcheck="false"></textarea>
             <button class="ni-pt-reset" id="ni-style-pt-reset" title="恢复默认提示词"><i class="ti ti-rotate"></i></button>
           </div>
         </div>
@@ -448,7 +448,7 @@
             <span class="ni-switch-wrap" style="display:inline-flex;align-items:center;gap:4px">
               <input type="checkbox" id="ni-tb-chk" style="position:absolute;opacity:0;width:0;height:0">
               <span class="ni-switch-track"><span class="ni-switch-knob"></span></span>
-              <span class="ni-switch-txt" id="ni-tb-state" style="color:#E07AAC">已关闭</span>
+              <span class="ni-switch-txt" id="ni-tb-state" style="display:inline-block;font-size:11px;font-weight:700;transition:color .2s;color:var(--ni-primary,#A0445E)">关</span>
             </span>
           </label>
           <button class="ni-icon-btn" id="ni-tb-cfg-btn" title="穿书设置" style="margin-left:auto"><i class="ti ti-settings"></i></button>
@@ -704,7 +704,7 @@
               <span class="ni-switch-wrap">
                 <input type="checkbox" id="ni-user-sub-chk">
                 <span class="ni-switch-track"><span class="ni-switch-knob"></span></span>
-                <span class="ni-switch-txt" id="ni-user-sub-state">已关闭</span>
+                <span class="ni-switch-txt" id="ni-user-sub-state" style="display:inline-block;font-size:11px;font-weight:700;transition:color .2s;color:var(--ni-primary,#A0445E)">关</span>
               </span>
             </label>
             <button class="ni-icon-btn" id="ni-user-sub-cfg-btn" title="用户代入设置"><i class="ti ti-settings"></i></button>
@@ -848,7 +848,7 @@
               <span class="ni-switch-track">
                 <span class="ni-switch-knob"></span>
               </span>
-              <span class="ni-switch-txt" id="ni-plugin-state" style="color:#E07AAC">已启用</span>
+              <span class="ni-switch-txt" id="ni-plugin-state" style="display:inline-block;font-size:11px;font-weight:700;transition:color .2s;color:var(--ni-primary,#A0445E)">开</span>
             </span>
             <span id="ni-plugin-disabled-hint" style="display:none;color:var(--color-text-secondary);font-size:11px;font-weight:500;letter-spacing:.06em;align-items:center;gap:3px"><i class="ti ti-alert-circle"></i> 停止注入</span>
           </label>
@@ -876,7 +876,6 @@
             <div class="ni-theme-preset-controls">
               <select id="ni-theme-preset" class="ni-theme-select">
                 <option value="default">默认</option>
-                <option value="custom">自定义</option>
               </select>
               <button class="ni-theme-tool-btn" id="ni-theme-import" title="导入"><i class="ti ti-file-import"></i></button>
               <button class="ni-theme-tool-btn" id="ni-theme-export" title="导出"><i class="ti ti-file-export"></i></button>
@@ -924,7 +923,7 @@
             <span class="ni-switch-wrap">
               <input type="checkbox" id="ni-theme-surface-follow" style="position:absolute;opacity:0;width:0;height:0">
               <span class="ni-switch-track"><span class="ni-switch-knob"></span></span>
-              <span class="ni-switch-txt" id="ni-theme-surface-state">开</span>
+              <span class="ni-switch-txt" id="ni-theme-surface-state" style="display:inline-block;font-size:11px;font-weight:700;transition:color .2s;color:var(--ni-primary,#A0445E)">开</span>
             </span>
           </label>
           <label class="ni-switch-row" id="ni-theme-borderless-row">
@@ -932,7 +931,7 @@
             <span class="ni-switch-wrap">
               <input type="checkbox" id="ni-theme-borderless" style="position:absolute;opacity:0;width:0;height:0">
               <span class="ni-switch-track"><span class="ni-switch-knob"></span></span>
-              <span class="ni-switch-txt" id="ni-theme-borderless-state">关</span>
+              <span class="ni-switch-txt" id="ni-theme-borderless-state" style="display:inline-block;font-size:11px;font-weight:700;transition:color .2s;color:var(--ni-primary,#A0445E)">关</span>
             </span>
           </label>
           <div class="ni-theme-custom-row">

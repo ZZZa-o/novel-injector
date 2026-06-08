@@ -46,6 +46,7 @@ import {
     NI_THEME_BUILTIN_PRESETS,
     NI_THEME_DEFAULT,
     niApplyThemeSettings,
+    niNormalizeBackgroundGradient,
     niNormalizeHex,
 } from './lib/theme-utils.js';
 
@@ -575,6 +576,7 @@ const DEFAULT_SETTINGS = {
     themeBackground: NI_THEME_DEFAULT.background,
     themeText: NI_THEME_DEFAULT.text,
     themeUserPresets: [],
+    themePresetOverrides: {},
     themeDeletedPresetIds: [],
     vecInjDisabled: false, // 有向量数据但用户选择不调用向量注入
     novelLibrary: [],     // 小说快照库 [{name, key, snapshot}]
@@ -1195,7 +1197,7 @@ function syncSettingsToUI() {
     if (streamEl) {
         streamEl.checked = cfg.cleanStream ?? DEFAULT_SETTINGS.cleanStream;
         const pill = q('#ni-stream-pill');
-        if (pill) { pill.textContent = streamEl.checked ? '开' : '关'; pill.style.background = streamEl.checked ? '#C4607A' : ''; pill.style.color = streamEl.checked ? '#fff' : ''; }
+        if (pill) pill.textContent = streamEl.checked ? '开' : '关';
     }
     sv('#ni-vec-key',      cfg.vecKey      || '');
     sv('#ni-vec-url',      cfg.vecUrl      || DEFAULT_SETTINGS.vecUrl);
@@ -1254,8 +1256,7 @@ function syncSettingsToUI() {
     const _tbStateTxt = q('#ni-tb-state');
     if (_tbChk && _tbStateTxt) {
         _tbChk.checked = !!cfg.transBookMode;
-        _tbStateTxt.textContent = _tbChk.checked ? '已启用' : '已关闭';
-        _tbStateTxt.style.color = _tbChk.checked ? '#E07AAC' : 'var(--color-border-secondary, #777)';
+        _tbStateTxt.textContent = _tbChk.checked ? '开' : '关';
     }
 }
 
@@ -3425,8 +3426,7 @@ function niRenderUserSubUI() {
 
     const enabled = !!cfg.userSubEnabled;
     chk.checked = enabled;
-    state.textContent = enabled ? '已启用' : '已关闭';
-    state.style.color = enabled ? '#E07AAC' : 'var(--color-border-secondary, #777)';
+    state.textContent = enabled ? '开' : '关';
     row?.classList.toggle('ni-switch-off', !enabled);
 
     const selectedIdx = cfg.userSubCharIdx ?? '';
@@ -5687,14 +5687,14 @@ function niThemePresetOptions(cfg = extension_settings[EXT_NAME] || {}) {
     const users = (Array.isArray(cfg.themeUserPresets) ? cfg.themeUserPresets : [])
         .filter(item => item && item.id && !deleted.has(`user:${item.id}`))
         .map(item => ({ value: `user:${item.id}`, name: item.name || '未命名' }));
-    return [...builtins, ...users, { value: 'custom', name: '自定义' }];
+    return [...builtins, ...users];
 }
 
 function niRenderThemePresetOptions(selected) {
     const cfg = extension_settings[EXT_NAME] || {};
     const select = q('#ni-theme-preset');
     const options = niThemePresetOptions(cfg);
-    const nextSelected = options.some(item => item.value === selected) ? selected : (options[0]?.value || 'custom');
+    const nextSelected = options.some(item => item.value === selected) ? selected : (options[0]?.value || 'default');
     if (select) {
         select.innerHTML = options.map(item => `<option value="${niEscAttr(item.value)}">${niEscHtml(item.name)}</option>`).join('');
         select.value = nextSelected;
@@ -5712,6 +5712,18 @@ function niThemeUserPreset(value, cfg = extension_settings[EXT_NAME] || {}) {
     return (Array.isArray(cfg.themeUserPresets) ? cfg.themeUserPresets : []).find(item => item?.id === id) || null;
 }
 
+function niThemeBuiltinOverride(value, cfg = extension_settings[EXT_NAME] || {}) {
+    if (!value || value === 'custom' || value.startsWith('user:')) return null;
+    const overrides = cfg.themePresetOverrides && typeof cfg.themePresetOverrides === 'object' ? cfg.themePresetOverrides : {};
+    return overrides[value] || null;
+}
+
+function niThemePresetSource(value, cfg = extension_settings[EXT_NAME] || {}) {
+    const user = niThemeUserPreset(value, cfg);
+    if (user) return user;
+    return niThemeBuiltinOverride(value, cfg) || niThemeBuiltinPreset(value);
+}
+
 function niThemePresetColors(value, cfg = extension_settings[EXT_NAME] || {}) {
     if (value === 'custom') {
         return {
@@ -5723,8 +5735,7 @@ function niThemePresetColors(value, cfg = extension_settings[EXT_NAME] || {}) {
             text: niNormalizeHex(cfg.themeText, NI_THEME_DEFAULT.text),
         };
     }
-    const user = niThemeUserPreset(value, cfg);
-    const source = user?.colors || niThemeBuiltinPreset(value)?.colors || NI_THEME_DEFAULT;
+    const source = niThemePresetSource(value, cfg)?.colors || NI_THEME_DEFAULT;
     return {
         primary: niNormalizeHex(source.primary, NI_THEME_DEFAULT.primary),
         success: niNormalizeHex(source.success, NI_THEME_DEFAULT.success),
@@ -5733,6 +5744,12 @@ function niThemePresetColors(value, cfg = extension_settings[EXT_NAME] || {}) {
         background: niNormalizeHex(source.background, NI_THEME_DEFAULT.background),
         text: niNormalizeHex(source.text, NI_THEME_DEFAULT.text),
     };
+}
+
+function niThemePresetBackgroundGradient(value, cfg = extension_settings[EXT_NAME] || {}) {
+    if (value === 'custom') return null;
+    const source = niThemePresetSource(value, cfg);
+    return niNormalizeBackgroundGradient(source?.backgroundGradient);
 }
 
 function niThemeCurrentColors() {
@@ -5749,6 +5766,7 @@ function niThemeCurrentColors() {
 function niSyncThemeUI() {
     const cfg = extension_settings[EXT_NAME] || {};
     const preset = niRenderThemePresetOptions(cfg.themePreset || DEFAULT_SETTINGS.themePreset);
+    if (cfg.themePreset === 'custom' || cfg.themePreset !== preset) cfg.themePreset = preset;
     const colors = niThemePresetColors(preset, cfg);
     ['primary', 'success', 'pivot', 'warning'].forEach(key => {
         niSetThemeColorUI(key, colors[key]);
@@ -5762,16 +5780,17 @@ function niSyncThemeUI() {
 
 function niSetThemePreset(preset) {
     const nextPreset = niRenderThemePresetOptions(preset);
+    const cfg = extension_settings[EXT_NAME] || {};
+    cfg.themePreset = nextPreset;
     const colors = niThemePresetColors(nextPreset);
     sv('#ni-theme-preset', nextPreset);
     ['primary', 'success', 'pivot', 'warning'].forEach(key => {
         niSetThemeColorUI(key, colors[key]);
     });
-    if (q('#ni-theme-surface-follow')?.checked !== false) {
-        niSetThemeColorUI('background', colors.background);
-        niSetThemeColorUI('text', colors.text);
-    }
+    niSetThemeColorUI('background', colors.background);
+    niSetThemeColorUI('text', colors.text);
     niApplyThemeWithSurface(niReadThemeDraft());
+    niSaveThemePreset();
 }
 
 function niParseThemeHexInput(value) {
@@ -5784,12 +5803,18 @@ function niParseThemeHexInput(value) {
     return '';
 }
 
-function niSetThemeColorUI(key, value) {
+function niIsThemeHexDraft(value) {
+    const raw = String(value || '').trim();
+    return raw === '' || /^#?[0-9a-fA-F]{0,6}$/.test(raw);
+}
+
+function niSetThemeColorUI(key, value, opts = {}) {
+    const syncCode = opts.syncCode !== false;
     const color = niNormalizeHex(value, NI_THEME_DEFAULT[key] || NI_THEME_DEFAULT.primary);
     sv(`#ni-theme-${key}`, color);
     const code = q(`#ni-theme-${key}-code`);
     if (code) {
-        code.value = color;
+        if (syncCode) code.value = color;
         code.classList.remove('ni-theme-code-invalid');
     }
     const swatch = q(`#ni-theme-${key}-swatch`);
@@ -5797,7 +5822,7 @@ function niSetThemeColorUI(key, value) {
 }
 
 function niReadThemeDraft() {
-    const preset = q('#ni-theme-preset')?.value || 'custom';
+    const preset = q('#ni-theme-preset')?.value || 'default';
     const surfaceFollow = q('#ni-theme-surface-follow')?.checked !== false;
     const colors = niThemeCurrentColors();
     return {
@@ -5820,22 +5845,32 @@ function niSetThemeColor(key, value) {
         niApplyThemeWithSurface(niReadThemeDraft());
         return;
     }
-    sv('#ni-theme-preset', 'custom');
     niSetThemeColorUI(key, value);
     niApplyThemeWithSurface(niReadThemeDraft());
 }
 
 function niSetThemeColorFromText(key, value) {
     const el = q(`#ni-theme-${key}-code`);
-    const color = niParseThemeHexInput(value);
-    if (!color) {
+    if (!niIsThemeHexDraft(value)) {
         el?.classList.add('ni-theme-code-invalid');
         return;
     }
+    el?.classList.remove('ni-theme-code-invalid');
+    const raw = String(value || '').trim();
+    const body = raw.startsWith('#') ? raw.slice(1) : raw;
+    if (!/^[0-9a-fA-F]{6}$/.test(body)) return;
+    const color = niParseThemeHexInput(value);
     niSetThemeColor(key, color);
+    niSetThemeColorUI(key, color, { syncCode: false });
 }
 
 function niRestoreThemeColorText(key) {
+    const el = q(`#ni-theme-${key}-code`);
+    const color = niParseThemeHexInput(el?.value);
+    if (color) {
+        niSetThemeColor(key, color);
+        return;
+    }
     const current = niNormalizeHex(q(`#ni-theme-${key}`)?.value, NI_THEME_DEFAULT[key] || NI_THEME_DEFAULT.primary);
     niSetThemeColorUI(key, current);
 }
@@ -5858,16 +5893,17 @@ function niSetThemeSurfaceUI(follow) {
 
 function niSetThemeSurfaceFollow(follow) {
     niSetThemeSurfaceUI(follow);
+    const cfg = extension_settings[EXT_NAME] || {};
+    const presetColors = niThemePresetColors(q('#ni-theme-preset')?.value || 'default');
     if (follow !== false) {
-        const colors = niThemePresetColors(q('#ni-theme-preset')?.value || 'custom');
-        niSetThemeColorUI('background', colors.background);
-        niSetThemeColorUI('text', colors.text);
+        niSetThemeColorUI('background', presetColors.background);
+        niSetThemeColorUI('text', presetColors.text);
     } else {
-        const cfg = extension_settings[EXT_NAME] || {};
-        niSetThemeColorUI('background', niNormalizeHex(cfg.themeBackground, NI_THEME_DEFAULT.background));
-        niSetThemeColorUI('text', niNormalizeHex(cfg.themeText, NI_THEME_DEFAULT.text));
+        niSetThemeColorUI('background', niNormalizeHex(cfg.themeBackground, presetColors.background));
+        niSetThemeColorUI('text', niNormalizeHex(cfg.themeText, presetColors.text));
     }
     niApplyThemeWithSurface(niReadThemeDraft());
+    niSaveThemePreset();
 }
 
 function niSetThemeBorderlessUI(enabled) {
@@ -5906,12 +5942,32 @@ function niNewThemePreset() {
     niSaveThemePreset();
 }
 
+function niThemeColorsEqual(a = {}, b = {}) {
+    return ['primary', 'success', 'pivot', 'warning', 'background', 'text']
+        .every(key => niNormalizeHex(a[key], NI_THEME_DEFAULT[key] || NI_THEME_DEFAULT.primary) === niNormalizeHex(b[key], NI_THEME_DEFAULT[key] || NI_THEME_DEFAULT.primary));
+}
+
 function niSaveThemePreset() {
     const cfg = extension_settings[EXT_NAME];
     const draft = niReadThemeDraft();
+    const colors = niThemeCurrentColors();
     if (draft.themePreset?.startsWith('user:')) {
         const user = niThemeUserPreset(draft.themePreset, cfg);
-        if (user) user.colors = niThemeCurrentColors();
+        if (user) user.colors = colors;
+    } else {
+        const builtin = niThemeBuiltinPreset(draft.themePreset);
+        if (builtin) {
+            if (!cfg.themePresetOverrides || typeof cfg.themePresetOverrides !== 'object') cfg.themePresetOverrides = {};
+            const existing = cfg.themePresetOverrides[draft.themePreset];
+            const shouldStore = existing || !niThemeColorsEqual(colors, builtin.colors);
+            if (shouldStore) {
+                cfg.themePresetOverrides[draft.themePreset] = {
+                    colors,
+                    ...(builtin.backgroundGradient ? { backgroundGradient: builtin.backgroundGradient } : {}),
+                    ...(builtin.surfaceGlass === true ? { surfaceGlass: true } : {}),
+                };
+            }
+        }
     }
     cfg.themePreset = draft.themePreset;
     cfg.themePrimary = draft.themePrimary;
@@ -5929,8 +5985,7 @@ function niSaveThemePreset() {
 
 function niDeleteThemePreset() {
     const cfg = extension_settings[EXT_NAME];
-    const value = q('#ni-theme-preset')?.value || 'custom';
-    if (value === 'custom') return;
+    const value = q('#ni-theme-preset')?.value || 'default';
     const option = niThemePresetOptions(cfg).find(item => item.value === value);
     if (!option) return;
     if (!confirm(`删除主题「${option.name}」？`)) return;
@@ -5941,15 +5996,16 @@ function niDeleteThemePreset() {
         if (!Array.isArray(cfg.themeDeletedPresetIds)) cfg.themeDeletedPresetIds = [];
         if (!cfg.themeDeletedPresetIds.includes(value)) cfg.themeDeletedPresetIds.push(value);
     }
-    cfg.themePreset = niRenderThemePresetOptions('custom');
+    cfg.themePreset = niRenderThemePresetOptions('default');
     niSetThemePreset(cfg.themePreset);
     niSaveThemePreset();
 }
 
 function niExportThemePreset() {
-    const value = q('#ni-theme-preset')?.value || 'custom';
+    const value = q('#ni-theme-preset')?.value || 'default';
     const option = niThemePresetOptions().find(item => item.value === value);
-    const name = option?.name || '自定义';
+    const name = option?.name || '主题';
+    const backgroundGradient = niThemePresetBackgroundGradient(value);
     const payload = {
         type: 'novel-injector-theme-preset',
         version: 1,
@@ -5959,6 +6015,7 @@ function niExportThemePreset() {
             surfaceFollowPreset: q('#ni-theme-surface-follow')?.checked !== false,
         },
     };
+    if (backgroundGradient) payload.preset.backgroundGradient = backgroundGradient;
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -5977,20 +6034,26 @@ function niImportThemePresetFile(file) {
             const raw = JSON.parse(String(reader.result || '{}'));
             const preset = raw.preset || raw;
             const colors = preset.colors || preset;
+            const backgroundGradient = niNormalizeBackgroundGradient(preset.backgroundGradient || raw.backgroundGradient);
             const name = String(preset.name || raw.name || file.name.replace(/\.json$/i, '') || '导入主题').trim();
             const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
             const cfg = extension_settings[EXT_NAME];
             if (!Array.isArray(cfg.themeUserPresets)) cfg.themeUserPresets = [];
-            cfg.themeUserPresets.push({ id, name, colors: {
+            const normalizedColors = {
                 primary: niNormalizeHex(colors.primary, NI_THEME_DEFAULT.primary),
                 success: niNormalizeHex(colors.success, NI_THEME_DEFAULT.success),
                 pivot: niNormalizeHex(colors.pivot, NI_THEME_DEFAULT.pivot),
                 warning: niNormalizeHex(colors.warning, NI_THEME_DEFAULT.warning),
                 background: niNormalizeHex(colors.background, NI_THEME_DEFAULT.background),
                 text: niNormalizeHex(colors.text, NI_THEME_DEFAULT.text),
-            } });
+            };
+            const userPreset = { id, name, colors: normalizedColors };
+            if (backgroundGradient) userPreset.backgroundGradient = backgroundGradient;
+            cfg.themeUserPresets.push(userPreset);
             cfg.themePreset = `user:${id}`;
-            cfg.themeSurfaceFollowPreset = preset.surfaceFollowPreset !== false;
+            cfg.themeSurfaceFollowPreset = backgroundGradient ? false : preset.surfaceFollowPreset !== false;
+            cfg.themeBackground = normalizedColors.background;
+            cfg.themeText = normalizedColors.text;
             niSyncThemeUI();
             niSaveThemePreset();
         } catch (e) {
@@ -6011,7 +6074,7 @@ function niSyncPluginToggleUI() {
     const hint = q('#ni-plugin-disabled-hint');
     const row = q('#ni-plugin-switch-row');
     if (chk) chk.checked = enabled;
-    if (stateLabel) { stateLabel.textContent = enabled ? '已启用' : '已关闭'; stateLabel.style.color = enabled ? '#E07AAC' : 'var(--color-border-secondary, #777)'; }
+    if (stateLabel) stateLabel.textContent = enabled ? '开' : '关';
     if (hint) hint.style.display = enabled ? 'none' : 'inline-flex';
     if (row) row.classList.toggle('ni-switch-off', !enabled);
 }
@@ -6855,7 +6918,7 @@ jQuery(async () => {
         const pill = q('#ni-stream-pill');
         if (!cb) return;
         cb.checked = !cb.checked;
-        if (pill) { pill.textContent = cb.checked ? '开' : '关'; pill.style.background = cb.checked ? '#C4607A' : ''; pill.style.color = cb.checked ? '#fff' : ''; }
+        if (pill) pill.textContent = cb.checked ? '开' : '关';
         niSaveSettings();
     });
 
@@ -9460,8 +9523,7 @@ function niTbInitSettingsUI() {
                 const _stateTxt = document.getElementById('ni-tb-state');
                 extension_settings[EXT_NAME].transBookMode = this.checked;
                 if (_stateTxt) {
-                    _stateTxt.textContent = this.checked ? '已启用' : '已关闭';
-                    _stateTxt.style.color = this.checked ? '#E07AAC' : 'var(--color-border-secondary, #777)';
+                    _stateTxt.textContent = this.checked ? '开' : '关';
                 }
                 saveSettingsDebounced();
                 if (this.checked) {
@@ -9579,8 +9641,7 @@ function niTbInitSettingsUI() {
     if (chk) {
         chk.checked = !!cfg?.transBookMode;
         if (stateTxt) {
-            stateTxt.textContent = chk.checked ? '已启用' : '已关闭';
-            stateTxt.style.color = chk.checked ? '#E07AAC' : 'var(--color-border-secondary, #777)';
+            stateTxt.textContent = chk.checked ? '开' : '关';
         }
     }
     const advElSync = document.getElementById('ni-tb-advance-prompt');
@@ -9643,8 +9704,7 @@ const _niSyncSettingsToUIPatched = function () {
         chk.checked = !!cfg.transBookMode;
         const stateTxt = document.getElementById('ni-tb-state');
         if (stateTxt) {
-            stateTxt.textContent = chk.checked ? '已启用' : '已关闭';
-            stateTxt.style.color = chk.checked ? '#E07AAC' : 'var(--color-border-secondary, #777)';
+            stateTxt.textContent = chk.checked ? '开' : '关';
         }
     }
     const advEl = document.getElementById('ni-tb-advance-prompt');
