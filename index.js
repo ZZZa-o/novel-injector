@@ -5774,11 +5774,24 @@ function niSetThemePreset(preset) {
     niApplyThemeWithSurface(niReadThemeDraft());
 }
 
+function niParseThemeHexInput(value) {
+    const raw = String(value || '').trim().toUpperCase();
+    const body = raw.startsWith('#') ? raw.slice(1) : raw;
+    if (/^[0-9A-F]{6}$/.test(body)) return `#${body}`;
+    if (/^[0-9A-F]{3}$/.test(body)) {
+        return `#${body.split('').map(ch => ch + ch).join('')}`;
+    }
+    return '';
+}
+
 function niSetThemeColorUI(key, value) {
     const color = niNormalizeHex(value, NI_THEME_DEFAULT[key] || NI_THEME_DEFAULT.primary);
     sv(`#ni-theme-${key}`, color);
     const code = q(`#ni-theme-${key}-code`);
-    if (code) code.textContent = color;
+    if (code) {
+        code.value = color;
+        code.classList.remove('ni-theme-code-invalid');
+    }
     const swatch = q(`#ni-theme-${key}-swatch`);
     if (swatch) swatch.style.background = color;
 }
@@ -5812,6 +5825,21 @@ function niSetThemeColor(key, value) {
     niApplyThemeWithSurface(niReadThemeDraft());
 }
 
+function niSetThemeColorFromText(key, value) {
+    const el = q(`#ni-theme-${key}-code`);
+    const color = niParseThemeHexInput(value);
+    if (!color) {
+        el?.classList.add('ni-theme-code-invalid');
+        return;
+    }
+    niSetThemeColor(key, color);
+}
+
+function niRestoreThemeColorText(key) {
+    const current = niNormalizeHex(q(`#ni-theme-${key}`)?.value, NI_THEME_DEFAULT[key] || NI_THEME_DEFAULT.primary);
+    niSetThemeColorUI(key, current);
+}
+
 function niSetThemeSurfaceUI(follow) {
     const checked = follow !== false;
     const chk = q('#ni-theme-surface-follow');
@@ -5823,6 +5851,8 @@ function niSetThemeSurfaceUI(follow) {
     ['background', 'text'].forEach(key => {
         const el = q(`#ni-theme-${key}`);
         if (el) el.disabled = checked;
+        const code = q(`#ni-theme-${key}-code`);
+        if (code) code.disabled = checked;
     });
 }
 
@@ -7461,6 +7491,12 @@ jQuery(async () => {
     });
     $app.on('input change', '.ni-theme-color-input', function() {
         niSetThemeColor(this.dataset.themeColor, this.value);
+    });
+    $app.on('input', '.ni-theme-code', function() {
+        niSetThemeColorFromText(this.dataset.themeColorCode, this.value);
+    });
+    $app.on('blur', '.ni-theme-code', function() {
+        niRestoreThemeColorText(this.dataset.themeColorCode);
     });
     $app.on('change', '#ni-theme-surface-follow', function() {
         niSetThemeSurfaceFollow(this.checked);
