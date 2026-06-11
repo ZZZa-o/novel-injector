@@ -3790,7 +3790,7 @@ function renderCharacters() {
                 <div>
                   <div class="ni-char-name-row">
                     <div class="ni-char-name">${niEscHtml(c.name)}</div>
-                    <button class="ni-char-ai-one-btn" data-char-idx="${i}" title="AI 更新此角色人设">A</button>
+                    <button class="ni-char-ai-one-btn" data-char-idx="${i}" title="AI 更新此角色人设" aria-label="AI 更新此角色人设"><i class="ti ti-sparkles" aria-hidden="true"></i></button>
                   </div>
                   <div class="ni-char-role-row"><div class="ni-char-role">${niEscHtml(c.role || '其他')}</div>${c.gender ? `<div class="ni-char-gender">${niEscHtml(c.gender)}</div>` : ''}</div>
                   ${(() => { const fs = getCharFirstStage(c); return fs != null ? `<button class="ni-char-stage-tag" data-stage-idx="${fs}">初次登场：第 ${fs} 阶段</button>` : ''; })()}
@@ -5059,7 +5059,7 @@ async function niGenOneCharManual(i) {
         if (btn) {
             btn.disabled = false;
             btn.classList.remove('loading');
-            btn.innerHTML = oldHtml || 'A';
+            btn.innerHTML = oldHtml || '<i class="ti ti-sparkles" aria-hidden="true"></i>';
         }
         _genCharsRunning = false;
     }

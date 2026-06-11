@@ -833,14 +833,15 @@
   width: 18px; height: 18px; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
   border: .5px solid var(--ni-primary-alpha-30, rgba(160, 68, 94, .3));
-  border-radius: 4px; background: var(--ni-primary-soft, #F5E6EC);
-  color: var(--ni-primary-soft-text, #8B3A50);
-  font-size: 11px; font-weight: 600; line-height: 1;
+  border-radius: 4px; background: transparent;
+  color: var(--ni-primary, #A0445E);
+  font-size: 12px; line-height: 1;
   cursor: pointer; flex-shrink: 0;
 }
-.ni-char-ai-one-btn:hover { border-color: var(--ni-primary, #A0445E); color: var(--ni-primary, #A0445E); }
+.ni-char-ai-one-btn:hover { border-color: var(--ni-primary, #A0445E); background: var(--ni-primary-alpha-12, rgba(160, 68, 94, .12)); }
 .ni-char-ai-one-btn:disabled { opacity: .55; cursor: wait; }
-.ni-char-ai-one-btn.loading i { font-size: 12px; animation: ni-spin .8s linear infinite; }
+.ni-char-ai-one-btn i { font-size: 13px; color: inherit; }
+.ni-char-ai-one-btn.loading i { animation: ni-spin .8s linear infinite; }
 .ni-char-role-row { display: flex; align-items: center; gap: 6px; margin-top: 1px; }
 .ni-char-role { font-size: 12px; color: var(--color-text-secondary); }
 .ni-char-gender { font-size: 11px; color: var(--color-text-tertiary); background: var(--color-background-secondary); border: .5px solid var(--color-border-secondary); border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
