@@ -151,6 +151,7 @@ const CLEAN_PROMPT = `小说分阶段精准压缩
 
 要求：
 - 按时间顺序覆盖本段全部剧情（主线、支线、关键场景一律纳入）
+- 压缩正文与 plots 节点必须使用同一发生顺序，不得把节点按 type 分类后重排
 - 第三人称全知视角，客观叙述，无主观评价
 - 保留关键对话（用引号标注发言者）、具体行为、时间地点
 - 压缩比 10:1～15:1，宁多勿少，确保后续可用于向量化语义检索
@@ -188,6 +189,7 @@ const CLEAN_PROMPT = `小说分阶段精准压缩
   ],
   "plots": [
     {
+      "order": 0,
       "type": "main|sub|pivot",
       "title": "剧情标题",
       "body": "剧情正文简述",
@@ -214,6 +216,10 @@ const CLEAN_PROMPT = `小说分阶段精准压缩
 - 同一称呼在同一角色下只输出一次；无称呼可收集时输出 []
 - character_name 必须尽量指向同一真实人物，避免把一个人拆成两个角色
 
+▌plots 顺序规则：
+- plots 必须按本段原文的发生顺序输出，不得先列 main、再列 sub、再列 pivot，也不得按节点类型分组
+- order 从 0 开始递增，表示节点在本段内的发生顺序；同一场景内按原文叙述先后排列
+
 ▌branch_links 填写规则（仅 main/pivot 节点填写，sub 填空数组）：
 - 时间段有交叉、或支线由该主线事件直接触发/并行发生的，必须填入
 - title 须与输出的某个 type=sub 节点 title 完全一致，禁止改写
@@ -231,7 +237,7 @@ const CLEAN_PROMPT = `小说分阶段精准压缩
 - 是否没有用剧情节点替代压缩正文，正文是否没有半截停止
 - <ni_meta> 标签是否成对出现，标签内元信息是否能被插件解析
 - characters、character_aliases 与 plots 是否均存在且为数组；无内容时是否输出 []
-- plots 中每个节点是否包含 type/title/body/sub_notes/branch_links/time/location/chunk_index
+- plots 中每个节点是否包含 order/type/title/body/sub_notes/branch_links/time/location/chunk_index
 - branch_links 是否只引用本批次真实存在的 sub title 或【伏笔】xxx
 - 是否没有 Markdown 代码块、道歉、解释或结构外文本`;
 
@@ -863,14 +869,14 @@ function niLoadSettings() {
         const pivotArr2 = S.plots.pivot || [];
         mainArr2.forEach((plot, i) => {
             const mapped = S.stageMap[i] ?? S.stageMap[String(i)];
-            if (mapped !== undefined) {
+            if (mapped !== undefined && plot.stageIdx == null) {
                 plot.stageIdx = mapped; plot.stageLabel = `第 ${mapped} 阶段`;
             }
         });
         pivotArr2.forEach((plot, i) => {
             const ci = mainArr2.length + i;
             const mapped = S.stageMap[ci] ?? S.stageMap[String(ci)];
-            if (mapped !== undefined) {
+            if (mapped !== undefined && plot.stageIdx == null) {
                 plot.stageIdx = mapped; plot.stageLabel = `第 ${mapped} 阶段`;
             }
         });
@@ -881,7 +887,7 @@ function niLoadSettings() {
                 const mainIdx = mainArr2.findIndex(p => p._chunkIdx === plot._chunkIdx);
                 if (mainIdx !== -1) mapped = S.stageMap[mainIdx] ?? S.stageMap[String(mainIdx)];
             }
-            if (mapped !== undefined) { plot.stageIdx = mapped; plot.stageLabel = `第 ${mapped} 阶段`; }
+            if (mapped !== undefined && plot.stageIdx == null) { plot.stageIdx = mapped; plot.stageLabel = `第 ${mapped} 阶段`; }
         });
     }
 
@@ -974,7 +980,10 @@ async function niServerLoadJsonByNames(names) {
 function niApplyHeavyCore(payload) {
     if (!payload) return;
     if (payload._characters)   S.characters   = payload._characters;
-    if (payload._plots)        S.plots        = payload._plots;
+    if (payload._plots) {
+        S.plots = payload._plots;
+        niNormalizePlotCollections();
+    }
     if (payload._chunkMeta)    S.chunkMeta    = payload._chunkMeta;
     if (payload._chunkStatus)  S.chunkStatus  = payload._chunkStatus;
     if (payload._styleGuide != null) S.styleGuide = payload._styleGuide;
@@ -2644,6 +2653,7 @@ async function niStartClean(options = {}) {
 
     // 重置：仅在全新清洗时清空；续跑时保留已有数据
     const isResume = !restart && S.chunkStatus.some(s => s === 'done');
+    const plotOrderMemory = isResume ? niCapturePlotOrderMemory() : null;
     if (!isResume) {
         S.characters = [];
         S.plots = { main: [], sub: [], pivot: [] };
@@ -2659,6 +2669,7 @@ async function niStartClean(options = {}) {
                 mergePlots(S.chunkMeta[k].plots || [], k);
             }
         }
+        niRestorePlotOrderMemory(plotOrderMemory);
     }
     // 续跑时从 chunkMeta 重建已完成段的节点数据（见下方续跑分支）
 
@@ -2770,7 +2781,7 @@ async function niStartClean(options = {}) {
     if (S.cleanDone) {
         // 重试后按 chunkIndex 重新排序，防止乱序
         ['main', 'sub', 'pivot'].forEach(type => {
-            S.plots[type].sort((a, b) => (a._chunkIdx ?? 0) - (b._chunkIdx ?? 0));
+            niSortPlotsByStoryOrder(S.plots[type]);
         });
         renderPlots();
         renderCharacters();
@@ -2846,6 +2857,8 @@ async function niRunSingleChunk(i) {
         S.chunkResults[i] = compressed;
         S.chunkMeta[i] = meta;  // 同步更新 chunkMeta
 
+        const plotOrderMemory = niCapturePlotOrderMemory();
+
         // 从 plots/characters 中移除该段旧数据，再 merge 新数据
         ['main', 'sub', 'pivot'].forEach(type => {
             S.plots[type] = (S.plots[type] || []).filter(p => p._chunkIdx !== i);
@@ -2858,10 +2871,11 @@ async function niRunSingleChunk(i) {
         mergeCharacters(meta.characters || [], i);
         mergeCharacterAliases(meta.character_aliases || meta.aliases || [], i);
         mergePlots(meta.plots || [], i);
+        niRestorePlotOrderMemory(plotOrderMemory);
 
         // merge 后按 _chunkIdx 重新排序，确保节点插入正确位置
         ['main', 'sub', 'pivot'].forEach(type => {
-            S.plots[type].sort((a, b) => (a._chunkIdx ?? 0) - (b._chunkIdx ?? 0));
+            niSortPlotsByStoryOrder(S.plots[type]);
         });
 
         setChunkStat(i, 'done');
@@ -3023,6 +3037,234 @@ function mergeCharacterAliases(incoming, chunkIndex) {
 // ============================================================
 // 合并剧情数据，计算所属阶段
 // ============================================================
+const NI_PLOT_TYPE_RANK = { main: 0, sub: 1, pivot: 2 };
+const NI_PLOT_CHUNK_ORDER_STEP = 1000000;
+const NI_PLOT_NODE_ORDER_STEP = 1000;
+
+function niFiniteNumber(value, fallback = 0) {
+    if (value === undefined || value === null || value === '') return fallback;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+}
+
+function niMaybeNumber(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+}
+
+function niPlotChunkIdx(plot, fallback = 0) {
+    return niFiniteNumber(plot?._chunkIdx ?? plot?.chunk_index ?? plot?.chunkIndex, fallback);
+}
+
+function niPlotChunkOrder(plot, fallback = 0) {
+    return niFiniteNumber(
+        plot?._chunkOrder ??
+        plot?.chunk_order ??
+        plot?.chunkOrder ??
+        plot?.order ??
+        plot?.order_index ??
+        plot?.node_order,
+        fallback
+    );
+}
+
+function niPlotTypeRank(plot) {
+    const type = plot?._type || plot?.type || '';
+    return NI_PLOT_TYPE_RANK[type] ?? 99;
+}
+
+function niPlotBaseOrder(plot, fallback = 0) {
+    return niPlotChunkIdx(plot) * NI_PLOT_CHUNK_ORDER_STEP +
+        niPlotChunkOrder(plot, fallback) * NI_PLOT_NODE_ORDER_STEP +
+        niPlotTypeRank(plot);
+}
+
+function niPlotManualOrder(plot) {
+    return niMaybeNumber(
+        plot?._manualOrder ??
+        plot?.manual_order ??
+        plot?.manualOrder ??
+        plot?._sortOrder ??
+        plot?.sort_order
+    );
+}
+
+function niPlotStoryOrder(plot, fallback = 0) {
+    const manual = niPlotManualOrder(plot);
+    return manual != null ? manual : niPlotBaseOrder(plot, fallback);
+}
+
+function niComparePlotOrder(a, b) {
+    const aFallback = niFiniteNumber(a?._originalIdx ?? a?._origIdx ?? a?._sourceIdx, 0);
+    const bFallback = niFiniteNumber(b?._originalIdx ?? b?._origIdx ?? b?._sourceIdx, 0);
+    return niPlotStoryOrder(a, aFallback) - niPlotStoryOrder(b, bFallback) ||
+        niPlotTypeRank(a) - niPlotTypeRank(b) ||
+        aFallback - bFallback;
+}
+
+function niComparePlotBaseOrder(a, b) {
+    const aFallback = niFiniteNumber(a?._originalIdx ?? a?._origIdx ?? a?._sourceIdx, 0);
+    const bFallback = niFiniteNumber(b?._originalIdx ?? b?._origIdx ?? b?._sourceIdx, 0);
+    return niPlotBaseOrder(a, aFallback) - niPlotBaseOrder(b, bFallback) ||
+        niPlotTypeRank(a) - niPlotTypeRank(b) ||
+        aFallback - bFallback;
+}
+
+function niSortPlotsByStoryOrder(items) {
+    return (items || []).sort(niComparePlotOrder);
+}
+
+function niHashShort(text) {
+    let h = 2166136261;
+    const s = String(text || '');
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(36);
+}
+
+function niEnsurePlotNodeId(plot, type = 'main', index = 0) {
+    if (!plot || typeof plot !== 'object') return `${type}:${index}`;
+    const existing = plot._nodeId || plot.node_id || plot.nodeId || plot.id;
+    if (existing) {
+        plot._nodeId = String(existing);
+        return plot._nodeId;
+    }
+    const chunk = niPlotChunkIdx(plot, index);
+    const order = niPlotChunkOrder(plot, index);
+    plot._nodeId = `${type}:${chunk}:${order}:${niHashShort(`${plot.title || ''}\n${plot.body || ''}`)}`;
+    return plot._nodeId;
+}
+
+function niNormalizeIncomingPlots(incoming) {
+    if (Array.isArray(incoming)) return incoming;
+    if (!incoming || typeof incoming !== 'object') return [];
+    return ['main', 'sub', 'pivot'].flatMap(type =>
+        (Array.isArray(incoming[type]) ? incoming[type] : [])
+            .map(plot => ({ ...(plot || {}), type: plot?.type || type }))
+    );
+}
+
+function niOrderedPlotEntries(groups) {
+    return groups.flatMap(({ type, items }) =>
+        (items || []).map((plot, index) => {
+            if (plot && typeof plot === 'object') niEnsurePlotNodeId(plot, type, index);
+            return {
+                ...(plot || {}),
+                type: plot?.type || type,
+                _type: type,
+                _sourceIdx: index,
+                _originalIdx: plot?._originalIdx ?? index,
+                _plotRef: plot,
+            };
+        })
+    ).sort(niComparePlotOrder);
+}
+
+function niGetAllPlotsInStoryOrder() {
+    return niOrderedPlotEntries([
+        { type: 'main', items: S.plots.main || [] },
+        { type: 'sub', items: S.plots.sub || [] },
+        { type: 'pivot', items: S.plots.pivot || [] },
+    ]);
+}
+
+function niMergeStageNodes(nodes) {
+    return niOrderedPlotEntries([
+        { type: 'main', items: nodes?.main || [] },
+        { type: 'sub', items: nodes?.sub || [] },
+        { type: 'pivot', items: nodes?.pivot || [] },
+    ]);
+}
+
+function niRebuildStageMapFromPlotStageIdx() {
+    if (S.stageMapN <= 0) return;
+    const rebuilt = {};
+    const main = S.plots.main || [];
+    const pivot = S.plots.pivot || [];
+    main.forEach((plot, i) => {
+        if (plot?.stageIdx == null) return;
+        rebuilt[i] = plot.stageIdx;
+    });
+    pivot.forEach((plot, i) => {
+        if (plot?.stageIdx == null) return;
+        rebuilt[main.length + i] = plot.stageIdx;
+    });
+    if (Object.keys(rebuilt).length) S.stageMap = rebuilt;
+}
+
+function niApplyManualPlotOrderForType(type, orderedRefs = null) {
+    const refs = (orderedRefs || S.plots[type] || []).filter(Boolean);
+    const all = niGetAllPlotsInStoryOrder().sort(niComparePlotBaseOrder);
+    const slots = all
+        .map((entry, index) => entry._type === type ? niPlotBaseOrder(entry, index) : null)
+        .filter(slot => slot != null);
+    let nextSlot = slots.length ? slots[slots.length - 1] : null;
+    refs.forEach((ref, index) => {
+        if (slots[index] != null) {
+            ref._manualOrder = slots[index];
+            return;
+        }
+        nextSlot = nextSlot == null
+            ? niPlotBaseOrder(ref, index)
+            : nextSlot + NI_PLOT_NODE_ORDER_STEP;
+        ref._manualOrder = nextSlot;
+    });
+    S.plots[type] = refs;
+    niRebuildStageMapFromPlotStageIdx();
+}
+
+function niMovePlotByDisplayPosition(type, fromPos, toPos) {
+    const arr = S.plots[type] || [];
+    const entries = niOrderedPlotEntries([{ type, items: arr }]);
+    if (fromPos < 0 || toPos < 0 || fromPos >= entries.length || toPos >= entries.length || fromPos === toPos) return false;
+    const [moved] = entries.splice(fromPos, 1);
+    entries.splice(toPos, 0, moved);
+    const orderedRefs = entries.map(entry => entry._plotRef).filter(Boolean);
+    niApplyManualPlotOrderForType(type, orderedRefs);
+    return true;
+}
+
+function niNormalizePlotCollections() {
+    ['main', 'sub', 'pivot'].forEach(type => {
+        if (!Array.isArray(S.plots[type])) S.plots[type] = [];
+        S.plots[type].forEach((plot, index) => {
+            if (!plot || typeof plot !== 'object') return;
+            plot.type = plot.type || type;
+            plot._chunkIdx = niPlotChunkIdx(plot, plot._chunkIdx ?? 0);
+            plot._chunkOrder = niPlotChunkOrder(plot, index);
+            if (plot.stageIdx != null && !plot.stageLabel) plot.stageLabel = `第 ${plot.stageIdx} 阶段`;
+            niEnsurePlotNodeId(plot, type, index);
+        });
+        niSortPlotsByStoryOrder(S.plots[type]);
+    });
+    niRebuildStageMapFromPlotStageIdx();
+}
+
+function niCapturePlotOrderMemory() {
+    const memory = new Map();
+    ['main', 'sub', 'pivot'].forEach(type => {
+        (S.plots[type] || []).forEach((plot, index) => {
+            const manual = niPlotManualOrder(plot);
+            if (manual == null) return;
+            memory.set(niEnsurePlotNodeId(plot, type, index), manual);
+        });
+    });
+    return memory;
+}
+
+function niRestorePlotOrderMemory(memory) {
+    if (!memory || !memory.size) return;
+    ['main', 'sub', 'pivot'].forEach(type => {
+        (S.plots[type] || []).forEach((plot, index) => {
+            const id = niEnsurePlotNodeId(plot, type, index);
+            if (memory.has(id)) plot._manualOrder = memory.get(id);
+        });
+    });
+}
+
 function mergePlots(incoming, chunkIndex) {
     // stageMap key = main数组下标，不能用 chunkIndex 直接查。
     // 这里只记录 _chunkIdx，stageIdx 由 niConfirmStageMap 事后统一回填。
@@ -3037,9 +3279,21 @@ function mergePlots(incoming, chunkIndex) {
         }
     }
 
-    for (const p of incoming) {
+    const plots = niNormalizeIncomingPlots(incoming)
+        .map((plot, index) => ({ ...(plot || {}), _sourceIdx: index }))
+        .sort((a, b) => {
+            const ai = niFiniteNumber(a._sourceIdx, 0);
+            const bi = niFiniteNumber(b._sourceIdx, 0);
+            return niPlotChunkOrder(a, ai) - niPlotChunkOrder(b, bi) ||
+                niPlotTypeRank(a) - niPlotTypeRank(b) ||
+                ai - bi;
+        });
+    plots.forEach((p, localIndex) => {
         const bucket = ['main', 'sub', 'pivot'].includes(p.type) ? p.type : 'main';
-        S.plots[bucket].push({
+        const chunkOrder = niPlotChunkOrder(p, p._sourceIdx ?? localIndex);
+        const newPlot = {
+            _nodeId: p._nodeId || p.node_id || p.nodeId || p.id || `${bucket}:${chunkIndex}:${chunkOrder}:${niHashShort(`${p.title || ''}\n${p.body || ''}`)}`,
+            type: bucket,
             title: p.title || '（无标题）',
             body: p.body || '',
             sub_notes: p.sub_notes || [],
@@ -3049,8 +3303,15 @@ function mergePlots(incoming, chunkIndex) {
             stageIdx,
             stageLabel: stageIdx != null ? `第 ${stageIdx} 阶段` : null,
             _chunkIdx: chunkIndex,
+            _chunkOrder: chunkOrder,
+        };
+        const manualOrder = niPlotManualOrder(p);
+        if (manualOrder != null) newPlot._manualOrder = manualOrder;
+        niEnsurePlotNodeId(newPlot, bucket, localIndex);
+        S.plots[bucket].push({
+            ...newPlot,
         });
-    }
+    });
 }
 
 // ============================================================
@@ -3076,9 +3337,9 @@ function niSyncPlotActionButtons(exitModes = false) {
 
 function renderPlots() {
     // 记录原始数组下标再排序，确保编辑/删除时能正确定位 S.plots[type][originalIdx]
-    const main  = (S.plots.main  || []).map((p, i) => ({ ...p, _originalIdx: i })).sort((a, b) => (a._chunkIdx ?? 0) - (b._chunkIdx ?? 0));
-    const sub   = (S.plots.sub   || []).map((p, i) => ({ ...p, _originalIdx: i })).sort((a, b) => (a._chunkIdx ?? 0) - (b._chunkIdx ?? 0));
-    const pivot = (S.plots.pivot || []).map((p, i) => ({ ...p, _originalIdx: i })).sort((a, b) => (a._chunkIdx ?? 0) - (b._chunkIdx ?? 0));
+    const main  = niOrderedPlotEntries([{ type: 'main',  items: S.plots.main  || [] }]);
+    const sub   = niOrderedPlotEntries([{ type: 'sub',   items: S.plots.sub   || [] }]);
+    const pivot = niOrderedPlotEntries([{ type: 'pivot', items: S.plots.pivot || [] }]);
 
     q('#ni-plot-count-lbl').textContent =
         `主线 ${main.length} · 支线 ${sub.length} · 转折 ${pivot.length}`;
@@ -3102,7 +3363,7 @@ function renderTimeline(main, sub, pivot) {
     const nodes = [
         ...main.map((p, i) => ({ ...p, _type: 'main', _mainIdx: i })),
         ...pivot.map((p, i) => ({ ...p, _type: 'pivot', _pivotIdx: i })),
-    ].sort((a, b) => (a._chunkIdx ?? 0) - (b._chunkIdx ?? 0));
+    ].sort(niComparePlotOrder);
 
     if (!nodes.length) {
         el.innerHTML = '<div class="ni-empty"><i class="ti ti-book-off"></i>暂无数据</div>';
@@ -3204,6 +3465,7 @@ function renderPlotList(containerId, items, badgeCls, label) {
     el.innerHTML = items.map((it, i) => {
         const origIdx = it._originalIdx ?? i;
         const id = `ni-pi-${containerId}-${origIdx}`;
+        const nodeId = niEnsurePlotNodeId(it, it._type || label, origIdx);
 
         // sub_notes: small numbered events
         const subNotesHtml = it.sub_notes?.length
@@ -3235,7 +3497,7 @@ function renderPlotList(containerId, items, badgeCls, label) {
               '</div>'
             : '';
 
-        return `<div class="ni-plot-item" id="${id}" draggable="false" data-plot-type="${containerId}" data-plot-idx="${origIdx}">
+        return `<div class="ni-plot-item" id="${id}" draggable="false" data-plot-type="${containerId}" data-plot-idx="${origIdx}" data-plot-pos="${i}" data-node-id="${niEscAttr(nodeId)}">
           <div class="ni-plot-head" data-plot-id="${id}">
             <i class="ti ti-grip-vertical ni-plot-drag-handle" title="拖拽排序"></i>
             <span class="ni-badge ${badgeCls}">${label}${i + 1}</span>
@@ -3309,12 +3571,10 @@ function niBindPlotDrag(container, containerId) {
                 const target = document.elementFromPoint(touch.clientX, touch.clientY);
                 const overItem = target?.closest('.ni-plot-item');
                 if (overItem && overItem !== dragSrc) {
-                    const fromIdx = parseInt(dragSrc.dataset.plotIdx);
-                    const toIdx   = parseInt(overItem.dataset.plotIdx);
-                    if (!isNaN(fromIdx) && !isNaN(toIdx) && fromIdx !== toIdx) {
-                        const arr = S.plots[plotType];
-                        const [moved] = arr.splice(fromIdx, 1);
-                        arr.splice(toIdx, 0, moved);
+                    const fromPos = parseInt(dragSrc.dataset.plotPos);
+                    const toPos   = parseInt(overItem.dataset.plotPos);
+                    if (!isNaN(fromPos) && !isNaN(toPos) && fromPos !== toPos) {
+                        niMovePlotByDisplayPosition(plotType, fromPos, toPos);
                         niSaveSettings();
                         renderPlots();
                     }
@@ -3355,15 +3615,10 @@ function niBindPlotDrag(container, containerId) {
             e.preventDefault();
             if (!dragSrc || dragSrc === item) return;
 
-            // 用 data-plot-idx 获取原始数组下标（排序后 DOM 位置与数组下标不一致）
-            const fromIdx = parseInt(dragSrc.dataset.plotIdx);
-            const toIdx   = parseInt(item.dataset.plotIdx);
-            if (isNaN(fromIdx) || isNaN(toIdx) || fromIdx === toIdx) return;
-
-            // 更新 S.plots[plotType] 数组顺序
-            const arr = S.plots[plotType];
-            const [moved] = arr.splice(fromIdx, 1);
-            arr.splice(toIdx, 0, moved);
+            const fromPos = parseInt(dragSrc.dataset.plotPos);
+            const toPos   = parseInt(item.dataset.plotPos);
+            if (isNaN(fromPos) || isNaN(toPos) || fromPos === toPos) return;
+            if (!niMovePlotByDisplayPosition(plotType, fromPos, toPos)) return;
 
             niSaveSettings();
             renderPlots();
@@ -3413,11 +3668,12 @@ async function niRepairBranchLinks() {
     }
 
     // 构造给 AI 的数据摘要（含 body 供语义判断，保留顺序作为时间线依据）
-    const mainList = [
-        ...main.map((p, i)  => ({ order: i,              idx: i, type: 'main',  title: p.title, time: p.time || '', body: (p.body || '').slice(0, 60) })),
-        ...pivot.map((p, i) => ({ order: main.length + i, idx: i, type: 'pivot', title: p.title, time: p.time || '', body: (p.body || '').slice(0, 60) })),
-    ].sort((a, b) => a.order - b.order);
-    const subList = sub.map((s, i) => ({ idx: i, title: s.title, time: s.time || '', body: (s.body || '').slice(0, 100) }));
+    const mainList = niOrderedPlotEntries([
+        { type: 'main', items: main },
+        { type: 'pivot', items: pivot },
+    ]).map((p, order) => ({ order, idx: p._sourceIdx, type: p._type, title: p.title, time: p.time || '', body: (p.body || '').slice(0, 60) }));
+    const subList = niOrderedPlotEntries([{ type: 'sub', items: sub }])
+        .map(s => ({ idx: s._sourceIdx, title: s.title, time: s.time || '', body: (s.body || '').slice(0, 100) }));
 
     const prompt = `你是小说剧情关联分析师。
 以下是小说的主线/转折节点列表，按故事时间顺序排列（order 越小越靠前）：
@@ -3556,7 +3812,7 @@ function niRefreshPlotInsertField(type) {
     }
 
     const currentType = ['main', 'sub', 'pivot'].includes(type) ? type : 'main';
-    const existingItems = S.plots[currentType] || [];
+    const existingItems = niOrderedPlotEntries([{ type: currentType, items: S.plots[currentType] || [] }]);
     sel.innerHTML = '<option value="end">末尾（追加）</option>' +
         existingItems.map((it, i) =>
             `<option value="${i}">第 ${i + 1} 位之前（${niEscHtml((it.title || '').slice(0, 12))}${(it.title || '').length > 12 ? '…' : ''}）</option>`
@@ -3611,14 +3867,17 @@ function niSavePlotModal() {
     const parentKey = q('#ni-plot-modal-parent')?.value ?? '';
     if (_plotModalMode === 'add') {
         if (!S.plots[type]) S.plots[type] = [];
-        const newItem = { title, body, time, location, sub_notes: [], branch_links: [] };
+        const newItem = { type, title, body, time, location, sub_notes: [], branch_links: [] };
+        niEnsurePlotNodeId(newItem, type, S.plots[type].length);
         const posVal = q('#ni-plot-modal-pos')?.value;
         const insertIdx = (posVal && posVal !== 'end') ? parseInt(posVal) : null;
-        if (insertIdx !== null && insertIdx >= 0 && insertIdx <= S.plots[type].length) {
-            S.plots[type].splice(insertIdx, 0, newItem);
+        const orderedRefs = niOrderedPlotEntries([{ type, items: S.plots[type] }]).map(entry => entry._plotRef).filter(Boolean);
+        if (insertIdx !== null && insertIdx >= 0 && insertIdx <= orderedRefs.length) {
+            orderedRefs.splice(insertIdx, 0, newItem);
         } else {
-            S.plots[type].push(newItem);
+            orderedRefs.push(newItem);
         }
+        niApplyManualPlotOrderForType(type, orderedRefs);
         if (type === 'sub') niSetSubParentLink(title, parentKey);
     } else if (_plotEditTarget) {
         const { type: t, idx } = _plotEditTarget;
@@ -3628,6 +3887,7 @@ function niSavePlotModal() {
             if (item) {
                 const oldSubTitle = t === 'sub' ? (item.title || '') : '';
                 item.title = title; item.body = body; item.time = time; item.location = location;
+                item.type = type;
                 if (type === 'sub') {
                     item.branch_links = [];
                     niSetSubParentLink(title, parentKey, oldSubTitle);
@@ -3636,12 +3896,15 @@ function niSavePlotModal() {
                 }
                 if (!S.plots[type]) S.plots[type] = [];
                 S.plots[type].push(item);
+                niApplyManualPlotOrderForType(t);
+                niApplyManualPlotOrderForType(type);
             }
         } else {
             const item = (S.plots[type] || [])[idx];
             if (item) {
                 const oldSubTitle = type === 'sub' ? (item.title || '') : '';
                 item.title = title; item.body = body; item.time = time; item.location = location;
+                item.type = type;
                 if (type === 'sub') niSetSubParentLink(title, parentKey, oldSubTitle);
             }
         }
@@ -3680,6 +3943,7 @@ function niConfirmPlotDel() {
     });
     ['main','sub','pivot'].forEach(t => {
         S.plots[t] = (S.plots[t] || []).filter(Boolean);
+        niApplyManualPlotOrderForType(t);
     });
     _plotDelSelected.clear();
     _plotDelMode = false;
@@ -4850,11 +5114,7 @@ ${novelCtx}
 }
 
 function niBuildCharAiProfileContext() {
-    const allNodes = [
-        ...(S.plots.main  || []),
-        ...(S.plots.sub   || []),
-        ...(S.plots.pivot || []),
-    ];
+    const allNodes = niGetAllPlotsInStoryOrder();
     const novelCtx = allNodes.map(p => `[${p.title}] ${p.body}`).slice(0, 80).join('\n');
 
     const ctx = getContext?.();
@@ -5097,18 +5357,18 @@ async function niGenStagesManual(skipExisting = false) {
         const _pv = S.plots.pivot || [];
         _m.forEach((plot, i) => {
             const mapped = S.stageMap[i] ?? S.stageMap[String(i)];
-            if (mapped !== undefined) plot.stageIdx = mapped;
+            if (mapped !== undefined && plot.stageIdx == null) plot.stageIdx = mapped;
         });
         _pv.forEach((plot, i) => {
             const ci = _m.length + i;
             const mapped = S.stageMap[ci] ?? S.stageMap[String(ci)];
-            if (mapped !== undefined) plot.stageIdx = mapped;
+            if (mapped !== undefined && plot.stageIdx == null) plot.stageIdx = mapped;
         });
         (S.plots.sub || []).forEach(plot => {
             const mainIdx = _m.findIndex(p => p._chunkIdx === plot._chunkIdx);
             if (mainIdx === -1) return;
             const mapped = S.stageMap[mainIdx] ?? S.stageMap[String(mainIdx)];
-            if (mapped !== undefined) plot.stageIdx = mapped;
+            if (mapped !== undefined && plot.stageIdx == null) plot.stageIdx = mapped;
         });
     }
 
@@ -5124,7 +5384,7 @@ async function niGenStagesManual(skipExisting = false) {
         if (summEl && !S.stageSummaries[i]) { summEl.textContent = '生成中…'; }
 
         const nodes = getNodesForStage(i);
-        const allNodes = [...nodes.main, ...nodes.sub, ...nodes.pivot];
+        const allNodes = niMergeStageNodes(nodes);
         if (!allNodes.length) {
             if (summEl && !S.stageSummaries[i]) { summEl.textContent = '暂无概括（无节点）'; }
             done++; continue;
@@ -5179,22 +5439,41 @@ function getNodesForStage(idx) {
     const pivotArr = S.plots.pivot || [];
 
     if (Object.keys(S.stageMap).length > 0) {
-        // stageMap key = main数组下标（assignedChunks 里存的是 ci: i，即数组下标）
-        // pivot 的 ci = main.length + pivot数组下标
-        const mainResult  = mainArr.filter((_, i) => S.stageMap[i] === idx || S.stageMap[String(i)] === idx);
+        const seen = new Set();
+        const keep = (type, plot, fallbackKey = '') => {
+            const id = niEnsurePlotNodeId(plot, type, fallbackKey);
+            if (seen.has(`${type}:${id}`)) return false;
+            seen.add(`${type}:${id}`);
+            return true;
+        };
+        const mainResult = mainArr.filter((p, i) =>
+            (p.stageIdx === idx || (p.stageIdx == null && (S.stageMap[i] === idx || S.stageMap[String(i)] === idx))) &&
+            keep('main', p, i)
+        );
         const pivotResult = pivotArr.filter((_, i) => {
             const ci = mainArr.length + i;
-            return S.stageMap[ci] === idx || S.stageMap[String(ci)] === idx;
+            const p = pivotArr[i];
+            return (p.stageIdx === idx || (p.stageIdx == null && (S.stageMap[ci] === idx || S.stageMap[String(ci)] === idx))) &&
+                keep('pivot', p, i);
         });
-        // sub 节点用 stageIdx 字段匹配
-        const subResult = subArr.filter(p => p.stageIdx === idx);
-        return { main: mainResult, sub: subResult, pivot: pivotResult };
+        const subResult = subArr.filter((p, i) => {
+            let mapped = p.stageIdx;
+            if (mapped == null && p._chunkIdx != null) {
+                mapped = S.stageMap[p._chunkIdx] ?? S.stageMap[String(p._chunkIdx)];
+            }
+            return mapped === idx && keep('sub', p, i);
+        });
+        return {
+            main: niSortPlotsByStoryOrder(mainResult),
+            sub: niSortPlotsByStoryOrder(subResult),
+            pivot: niSortPlotsByStoryOrder(pivotResult),
+        };
     }
     // 降级：stageMap 为空时用 stageIdx 字段
     return {
-        main:  mainArr.filter(p => p.stageIdx === idx),
-        sub:   subArr.filter(p => p.stageIdx === idx),
-        pivot: pivotArr.filter(p => p.stageIdx === idx),
+        main:  niSortPlotsByStoryOrder(mainArr.filter(p => p.stageIdx === idx)),
+        sub:   niSortPlotsByStoryOrder(subArr.filter(p => p.stageIdx === idx)),
+        pivot: niSortPlotsByStoryOrder(pivotArr.filter(p => p.stageIdx === idx)),
     };
 }
 
@@ -5352,7 +5631,7 @@ function updateStageLbl() {
     q('#ni-stage-active-lbl').textContent = `${on} / ${keys.length} 已启用`;
 }
 
-function niGoPlot(type, stageIdx, itemIdx) {
+function niGoPlot(type, stageIdx, itemIdx, nodeId = '') {
     const btn = q('.ni-nav-btn:nth-child(2)');
     niSwitchPage('plot', btn);
     setTimeout(() => {
@@ -5371,10 +5650,16 @@ function niGoPlot(type, stageIdx, itemIdx) {
         items.forEach(el => el.classList.remove('open'));
         // Find the exact item to open
         let targetEl = null;
-        if (itemIdx !== undefined) {
+        if (nodeId) {
+            items.forEach(el => {
+                if (!targetEl && String(el.dataset.nodeId || '') === String(nodeId)) targetEl = el;
+            });
+        }
+        if (!targetEl && itemIdx !== undefined) {
             // itemIdx is relative to this stage — map to absolute plot list index
             let stageCount = -1;
-            items.forEach((el, idx) => {
+            items.forEach(el => {
+                const idx = parseInt(el.dataset.plotIdx, 10);
                 if (plotList[idx]?.stageIdx === stageIdx) {
                     stageCount++;
                     if (stageCount === itemIdx) targetEl = el;
@@ -5383,7 +5668,8 @@ function niGoPlot(type, stageIdx, itemIdx) {
         }
         if (!targetEl) {
             // fallback: open first matching item in the stage
-            items.forEach((el, idx) => {
+            items.forEach(el => {
+                const idx = parseInt(el.dataset.plotIdx, 10);
                 if (!targetEl && plotList[idx]?.stageIdx === stageIdx) targetEl = el;
             });
         }
@@ -6013,7 +6299,7 @@ async function niRunDev() {
         const plotLines = [];
         for (const si of rawStages) {
             const nodes = getNodesForStage(si);
-            const allNodes = [...(nodes.main || []), ...(nodes.sub || []), ...(nodes.pivot || [])];
+            const allNodes = niMergeStageNodes(nodes);
             if (allNodes.length) {
                 plotLines.push(`【第 ${si} 阶段剧情节点】`);
                 allNodes.forEach(p => {
@@ -6187,11 +6473,7 @@ function niWorldToggleEdit(idx) {
 async function niWorldGenOne(idx) {
     const cats = niGetWorldCategories();
     if (!cats[idx]) return;
-    const allNodes = [
-        ...(S.plots.main || []),
-        ...(S.plots.sub || []),
-        ...(S.plots.pivot || []),
-    ];
+    const allNodes = niGetAllPlotsInStoryOrder();
     if (!allNodes.length) { alert('请先完成清洗，生成剧情节点后再提取世界设定'); return; }
     const regenBtn = q(`.ni-world-regen[data-world-idx="${idx}"]`);
     const editBtn  = q(`.ni-world-edit[data-world-idx="${idx}"]`);
@@ -6226,11 +6508,7 @@ let _worldGenRunning = false;
 async function niWorldGenAll() {
     if (_worldGenRunning) return;
     if (!S.cleanDone) { alert('请先完成清洗，生成剧情节点后再提取世界设定'); return; }
-    const allNodes = [
-        ...(S.plots.main || []),
-        ...(S.plots.sub || []),
-        ...(S.plots.pivot || []),
-    ];
+    const allNodes = niGetAllPlotsInStoryOrder();
     if (!allNodes.length) { alert('请先完成清洗，生成剧情节点后再提取世界设定'); return; }
     _worldGenRunning = true;
     const btn = q('#ni-world-gen-all');
@@ -6445,7 +6723,7 @@ async function onPromptReady(eventData) {
             } else {
                 // 剧情节点模式（默认）
                 const nodes = getNodesForStage(si);
-                const allNodes = [...(nodes.main||[]), ...(nodes.sub||[]), ...(nodes.pivot||[])];
+                const allNodes = niMergeStageNodes(nodes);
                 if (allNodes.length) {
                     plotLines.push(`【第 ${si} 阶段剧情节点】`);
                     allNodes.forEach(p => {
@@ -7341,6 +7619,7 @@ async function niImportData(file) {
                 const oldS = { characters: S.characters, plots: S.plots, chunkResults: S.chunkResults, chunkMeta: S.chunkMeta, chunkStatus: S.chunkStatus, styleGuide: S.styleGuide };
                 S.characters   = rt._characters   || [];
                 S.plots        = rt._plots        || { main: [], sub: [], pivot: [] };
+                niNormalizePlotCollections();
                 S.chunkResults = rt._chunkResults || [];
                 S.chunkMeta    = rt._chunkMeta    || [];
                 S.chunkStatus  = rt._chunkStatus  || [];
@@ -7465,6 +7744,7 @@ async function niImportData(file) {
         const oldS2 = { characters: S.characters, plots: S.plots, chunkResults: S.chunkResults, chunkMeta: S.chunkMeta, chunkStatus: S.chunkStatus, styleGuide: S.styleGuide };
         S.characters   = rt._characters   || [];
         S.plots        = rt._plots        || { main: [], sub: [], pivot: [] };
+        niNormalizePlotCollections();
         S.chunkResults = rt._chunkResults || [];
         S.chunkMeta    = rt._chunkMeta    || [];
         S.chunkStatus  = rt._chunkStatus  || [];
@@ -8318,7 +8598,7 @@ jQuery(async () => {
             const typeMap = { main: '主线节点', sub: '支线节点', pivot: '关键转折' };
             const items = nodes[plotType] || [];
             if (!items.length) { niGoPlot(plotType, stageIdx); return; }
-            const html = items.map((p, idx) => `<div class="ni-pin-row ni-pin-type-${plotType}" data-plot-type="${plotType}" data-stage-idx="${stageIdx}" data-item-idx="${idx}">
+            const html = items.map((p, idx) => `<div class="ni-pin-row ni-pin-type-${plotType}" data-plot-type="${plotType}" data-stage-idx="${stageIdx}" data-item-idx="${idx}" data-node-id="${niEscAttr(niEnsurePlotNodeId(p, plotType, idx))}">
               <i class="ti ti-git-branch ni-pin-icon"></i>
               <span class="ni-pin-title">${niEscHtml(p.title || '')}</span>
               ${p.location ? `<span class="ni-pin-loc"><i class="ti ti-map-pin"></i>${niEscHtml(p.location)}</span>` : ''}
@@ -8335,7 +8615,8 @@ jQuery(async () => {
         const plotType = $(this).data('plot-type');
         const stageIdx = parseInt($(this).data('stage-idx'));
         const itemIdx = parseInt($(this).data('item-idx'));
-        niGoPlot(plotType, stageIdx, itemIdx);
+        const nodeId = $(this).data('node-id');
+        niGoPlot(plotType, stageIdx, itemIdx, nodeId);
     });
     $app.on('click', '.ni-sp-node-row', function() {
         niToggleChunkInSlot(parseInt($(this).data('slot-id')), parseInt($(this).data('chunk-idx')));
@@ -8661,17 +8942,17 @@ function niRenderStageSlots() {
         slot.assignedChunks.forEach(ci => { assignedMap[ci] = parseInt(sid); });
     });
 
-    // Fix②: 合并 main + pivot 作为所有可分配节点，每个节点带全局下标
     const main = S.plots.main || [];
     const pivot = S.plots.pivot || [];
-    // 用 chunkIdx（_chunkIdx 字段 or 数组下标）建立统一列表
-    // main 已按 chunkIdx 存储；pivot 也有 chunkIdx。
-    // 为了与 assignedChunks（存的是 main 数组下标）保持兼容，这里仍用 main 数组下标作为 ci。
-    // pivot 节点额外附加一个"pivot_X"虚拟 ci 区间，从 main.length 起。
-    const allNodes = [
-        ...main.map((p, i) => ({ plot: p, ci: i, chunkIdx: p._chunkIdx ?? i, isPivot: p._isPivot === true })),
-        ...pivot.map((p, i) => ({ plot: p, ci: main.length + i, chunkIdx: p._chunkIdx ?? 0, isPivot: true })),
-    ].sort((a, b) => a.chunkIdx - b.chunkIdx);
+    const allNodes = niOrderedPlotEntries([
+        { type: 'main', items: main },
+        { type: 'pivot', items: pivot },
+    ]).map(entry => ({
+        plot: entry._plotRef || entry,
+        ci: entry._type === 'main' ? entry._sourceIdx : main.length + entry._sourceIdx,
+        chunkIdx: entry._chunkIdx ?? entry._sourceIdx ?? 0,
+        isPivot: entry._type === 'pivot',
+    }));
 
     // 展开状态管理（默认展开新增阶段）
     if (!window._slotOpenStates) window._slotOpenStates = {};
@@ -8804,13 +9085,15 @@ async function niAutoStageByPivot() {
     const btn = q('#ni-sp-ai-btn');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i>划分中…'; }
 
-    // 合并 main + pivot，统一按 _chunkIdx 升序排列成时间轴
-    // 虚拟 ci：main 节点用其数组下标，pivot 节点用 main.length + pivotIdx（与渲染层保持一致）
-    const allNodes = [
-        ...main.map((p, i)  => ({ isPivot: false, ci: i,              chunkIdx: p._chunkIdx ?? i })),
-        ...pivot.map((p, pi) => ({ isPivot: true,  ci: main.length + pi, chunkIdx: p._chunkIdx ?? 0 })),
-    ].sort((a, b) => a.chunkIdx - b.chunkIdx || (a.isPivot ? 1 : -1));
-    // 同一 chunkIdx 内，pivot 排在 main 之后（转折是该段的压轴节点）
+    // 合并 main + pivot，沿用剧情页的统一顺序；同一分段内尊重 _chunkOrder/手动排序。
+    const allNodes = niOrderedPlotEntries([
+        { type: 'main', items: main },
+        { type: 'pivot', items: pivot },
+    ]).map(entry => ({
+        isPivot: entry._type === 'pivot',
+        ci: entry._type === 'main' ? entry._sourceIdx : main.length + entry._sourceIdx,
+        chunkIdx: niPlotChunkIdx(entry, entry._sourceIdx ?? 0),
+    }));
 
     // 按新逻辑划分：遍历时间轴，遇到 pivot 就封闭当前阶段（pivot 归入本阶段），之后开新阶段
     _stageSlots = {};
@@ -9527,39 +9810,37 @@ function niTbGetImmersionAppend(cfg) {
 // ── 数据桥接 ─────────────────────────────────────────────────
 
 /**
- * 返回所有节点，合并 main+sub+pivot，按 stageIdx 升序，同阶段内按原数组顺序。
+ * 返回所有节点，合并 main+sub+pivot，按 stageIdx 升序，同阶段内按故事/人工顺序。
  * 每个节点：{ id, type, typeLabel, title, body, time, location, stageIdx, done, locked }
  */
 function niGetTbNodes() {
-    const allNodes = [];
-    const addArr = (arr, type, typeLabel) => {
-        (arr || []).forEach((p, i) => {
-            allNodes.push({
-                id:          `${type}_${i}`,
-                type,
-                typeLabel,
-                title:       p.title || '（未命名）',
-                body:        p.body  || '',
-                time:        p.time  || '',
-                location:    p.location || '',
-                sub_notes:   p.sub_notes   || [],
-                branch_links: p.branch_links || [],
-                stageIdx:    p.stageIdx ?? 0,
-                done:        !!S.tbNodeDone[`${type}_${i}`],
-                locked:      false,  // 由下方锁定逻辑填充
-                _origIdx:    i,
-                _chunkIdx:   p._chunkIdx ?? 0,
-            });
-        });
-    };
-    addArr(S.plots.main,  'main',  '主线');
-    addArr(S.plots.sub,   'sub',   '支线');
-    addArr(S.plots.pivot, 'pivot', '关键转折');
-
-    // 按 _chunkIdx 升序，还原故事发生顺序（主线/支线/转折交替排列）
-    allNodes.sort((a, b) =>
-        a._chunkIdx !== b._chunkIdx ? a._chunkIdx - b._chunkIdx :
-        a.stageIdx  !== b.stageIdx  ? a.stageIdx - b.stageIdx : 0
+    const typeLabels = { main: '主线', sub: '支线', pivot: '关键转折' };
+    const allNodes = niGetAllPlotsInStoryOrder().map(p => {
+        const type = p._type || p.type || 'main';
+        const legacyId = `${type}_${p._sourceIdx ?? p._originalIdx ?? 0}`;
+        const id = niEnsurePlotNodeId(p._plotRef || p, type, p._sourceIdx ?? 0);
+        const done = S.tbNodeDone[id] !== undefined ? !!S.tbNodeDone[id] : !!S.tbNodeDone[legacyId];
+        return {
+            id,
+            legacyId,
+            type,
+            typeLabel:   typeLabels[type] || type,
+            title:       p.title || '（未命名）',
+            body:        p.body  || '',
+            time:        p.time  || '',
+            location:    p.location || '',
+            sub_notes:   p.sub_notes   || [],
+            branch_links: p.branch_links || [],
+            stageIdx:    p.stageIdx ?? 0,
+            done,
+            locked:      false,  // 由下方锁定逻辑填充
+            _origIdx:    p._sourceIdx ?? p._originalIdx ?? 0,
+            _chunkIdx:   p._chunkIdx ?? 0,
+            _chunkOrder: p._chunkOrder ?? 0,
+            _manualOrder: p._manualOrder,
+        };
+    }).sort((a, b) =>
+        a.stageIdx !== b.stageIdx ? a.stageIdx - b.stageIdx : niComparePlotOrder(a, b)
     );
 
     // 锁定逻辑：某阶段若有前序阶段存在未完成节点，则该阶段全部节点锁定
@@ -9971,6 +10252,7 @@ async function niTbToggleCheck(idx) {
 
     const newDone = !node.done;
     S.tbNodeDone[node.id] = newDone;
+    if (node.legacyId && node.legacyId !== node.id) delete S.tbNodeDone[node.legacyId];
 
     // 更新 DOM 立即反馈
     document.getElementById(`ni-tb-chk${idx}`)?.classList.toggle('checked', newDone);
@@ -10000,6 +10282,7 @@ async function niTbUnarchive(idx) {
     const node  = nodes[idx];
     if (!node) return;
     S.tbNodeDone[node.id] = false;
+    if (node.legacyId && node.legacyId !== node.id) delete S.tbNodeDone[node.legacyId];
     // 取消归档：清除以该节点为起点的已发送记录，下次完成时重新发首次提示词
     for (const key of _tbAdvanceSent) {
         if (key.startsWith(`${node.id}->`)) _tbAdvanceSent.delete(key);
