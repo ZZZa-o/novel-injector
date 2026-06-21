@@ -384,32 +384,81 @@ const ROLEPLAY_PROMPT = `# 【剧情演绎核心指令】
 4. 回复必须承接当前聊天已经建立的事实、场景、人物关系和情绪状态。`;
 
 // 偏差分析提示词
-const DEV_PROMPT = `你是小说剧情一致性分析师。
-以下是当前激活阶段的原著参考内容（已向量化阶段为语义召回片段，未向量化阶段为剧情节点文本）：
+const DEV_PROMPT = `你是小说剧情偏差分析与分支现实整理师。
+
+以下是当前激活阶段的原著参考内容：
 <reference>
 {REFERENCE}
 </reference>
 
-以下是当前对话的最近内容（已生成正文）：
+以下是此前已经保存的当前偏差档案。它代表当前分支现实中已经成立、后续仍需遵守的事实：
+<existing_deviation>
+{EXISTING_DEVIATION}
+</existing_deviation>
+
+以下是当前对话最近内容，也就是已经生成并成立的正文：
 <current>
 {CURRENT}
 </current>
 
-请将已生成正文与原著参考对比，分析偏差程度。严格按下面结构输出，不要输出任何其他文字：
+你的任务不是强行把当前剧情拉回原著，而是维护一份可注入给后续写作模型的“新现实约束”。
+如果已有偏差档案为空，本次是首次分析：判断当前正文是否已经形成会改变后续走向的关键偏差。
+如果已有偏差档案非空，本次是更新偏差档案：必须保留仍然有效的旧偏差，合并当前正文中新成立的偏差，并补充旧偏差造成的新连锁影响。
+最终输出必须是一份更新后的完整偏差档案，不是只输出本次新增内容。
+
+请严格按 JSON 输出，不要输出 Markdown、代码块或结构外文字：
 {
   "main_plot": 85,
   "characters": 90,
   "locations": 70,
   "subplots": 60,
-  "summary": "总体分析摘要，不超过100字"
+  "summary": "总体偏差摘要，不超过100字",
+  "major_deviations": [
+    {
+      "type": "plot|character|relationship|location|world_rule|subplot",
+      "original_fact": "原著中已经明确成立的事实",
+      "current_fact": "当前正文中已经明确成立的新事实",
+      "impact": "这个偏差会如何改变后续剧情走向",
+      "irreversible": true,
+      "confidence": 0.95
+    }
+  ],
+  "changed_facts": [
+    "后续必须承认的新事实，写成简短明确的约束"
+  ],
+  "preserved_facts": [
+    "仍应继续遵守的原著事实，避免把所有内容都推翻"
+  ],
+  "deviation_injection_prompt": "可直接注入后续写作模型的提示词，不超过500字"
 }
-字段含义：数字为贴合度百分比（0-100），越高越贴合原著。
-输出前暗中自检一次，不输出自检过程：
-- 是否符合上方对象结构
-- 是否只有 main_plot、characters、locations、subplots、summary 五个字段
-- 四个分数字段是否为 0-100 的数字
-- summary 是否不超过100字
-- 是否没有 Markdown、代码块或结构外文本`;
+
+判断规则：
+1. 分数字段仍表示当前正文与原著的贴合度，0-100，越高越贴合。
+2. 只有当前正文已经明确写成事实、角色已经承认、行动已经发生、关系已经改变、地点/生死/阵营/能力等状态已经成立时，才列入 major_deviations。
+3. 如果只是语气轻微不同、细节缺失、暂时没提到，不要列为重大偏差。
+4. 如果当前正文已经让某个原著关键事件不再可能按原样发生，应标记 irreversible 为 true。
+5. 对 irreversible 为 true 的偏差，后续写作必须承认当前正文为新的现实，不能用同一事件、同一事故、同一理由强行恢复原著结果。
+6. 对尚未明确成立、仍可自然拉回原著的偏差，irreversible 为 false，并在 deviation_injection_prompt 中建议温和回收，而不是硬改。
+7. changed_facts 必须写成后续模型能执行的事实约束，例如“某角色当前仍存活，并且不能再按原著同一事故死亡”。
+8. preserved_facts 用来保留仍有效的原著设定，防止因为一个偏差就把整个原著世界观推翻。
+9. deviation_injection_prompt 应该是给后续写作模型看的，不要分析打分，不要解释 JSON，只写执行约束。
+10. deviation_injection_prompt 必须包含三层意思：
+    - 当前正文已经成立的新事实优先于原著冲突事实。
+    - 原著中未被当前正文推翻的设定仍然有效。
+    - 后续剧情要基于新事实自然推演连锁反应，而不是强行复刻原著事件。
+11. 已有偏差档案中的事实，除非当前正文明确推翻、改写或自然修正，否则不得删除、遗忘或降级。
+12. 死亡、身份暴露、关系断裂、阵营改变、地点转移、能力变化、已完成的关键行动等硬事实，即使最近正文没有再次提到，也必须默认保留。
+13. 若旧偏差仍有效，应继续写入 major_deviations、changed_facts 或 deviation_injection_prompt；不要只写“同上”。
+14. 若当前正文新增了会改变后续走向的事实，应追加到更新后的偏差档案中。
+15. 若旧偏差被当前正文明确修正，应在 summary 中简要说明，并在最终约束中移除或弱化它。
+
+输出前暗中自检，不输出自检过程：
+- 是否是合法 JSON。
+- 是否包含所有指定字段。
+- main_plot、characters、locations、subplots 是否为 0-100 数字。
+- confidence 是否为 0-1 数字。
+- deviation_injection_prompt 是否不超过500字。
+- 是否没有 Markdown、代码块或 JSON 外文本。`;
 
 // ============================================================
 // 世界设定提示词
@@ -568,10 +617,16 @@ const DEFAULT_SETTINGS = {
     charInjPos: 2,   // 默认主提示前，人设通常放靠前
     charInjDepth: 4,
     charInjRole: 0,
+    charAutoSleepEnabled: true, // 开启阶段时自动休眠本阶段正文未出现的角色人设
     // 阶段剧情（未向量）注入设置
     plotInjPos: 1,   // 默认聊天内
     plotInjDepth: 4,
     plotInjRole: 0,
+    // 偏差注入设置
+    devPrompt: DEV_PROMPT,
+    devInjPos: 2,    // 默认主提示前，作为分支现实约束
+    devInjDepth: 0,
+    devInjRole: 0,
     rawInjMode: "nodes",  // "nodes"=剧情节点 | "compressed"=压缩原文
     globalPromptSource: 'builtin', // builtin=内置提示词 tavern=跟随酒馆主预设 none=不使用
     globalPrompt: GLOBAL_PROMPT,
@@ -668,6 +723,7 @@ const S = {
 
     // 文风
     styleGuide: '',         // 生成的文风执行指南文本
+    deviationGuide: '',     // 当前偏差注入文本
 
     // 注入
 };
@@ -829,6 +885,11 @@ function niLoadSettings() {
     Object.keys(DEFAULT_SETTINGS).forEach(k => {
         if (saved[k] === undefined) saved[k] = DEFAULT_SETTINGS[k];
     });
+    if (saved._charAutoSleepInitialized !== true) {
+        saved.charAutoSleepEnabled = true;
+        saved._charAutoSleepInitialized = true;
+        saveSettingsDebounced();
+    }
     niUpgradeLegacyTbDefaultPrompts(saved);
 
     // 还原轻量索引（重数据在 niLoadSettings 末尾从服务端异步拉取）
@@ -913,6 +974,7 @@ function niLoadSettings() {
                 if (resEl) resEl.value = S.styleGuide || '';
                 const wrap = q('#ni-style-result-wrap');
                 if (wrap) wrap.style.display = S.styleGuide ? 'block' : 'none';
+                niSyncDeviationResultUI({ collapsed: true });
             }
         }).catch(e => console.warn('[NI] 启动拉取重数据失败:', e));
     }
@@ -987,6 +1049,10 @@ function niApplyHeavyCore(payload) {
     if (payload._chunkMeta)    S.chunkMeta    = payload._chunkMeta;
     if (payload._chunkStatus)  S.chunkStatus  = payload._chunkStatus;
     if (payload._styleGuide != null) S.styleGuide = payload._styleGuide;
+    if (payload._deviationGuide != null) {
+        S.deviationGuide = payload._deviationGuide;
+        niSyncDeviationGuideToCurrentSnapshot();
+    }
     if (payload.heavyFileKey) S.heavyFileKey = payload.heavyFileKey;
 }
 
@@ -1016,6 +1082,7 @@ async function niServerSaveHeavy(novelKey, fileKey = '') {
         _chunkMeta:   S.chunkMeta,
         _chunkStatus: S.chunkStatus,
         _styleGuide:  S.styleGuide,
+        _deviationGuide: S.deviationGuide,
     };
     const chunksPayload = {
         version: 2,
@@ -1029,6 +1096,49 @@ async function niServerSaveHeavy(novelKey, fileKey = '') {
         await niServerUploadJson(niHeavyPartFileName(heavyFileKey, 'chunks'), chunksPayload);
     }
     await niServerUploadJson(niHeavyPartFileName(heavyFileKey, 'core'), corePayload);
+}
+
+let _niDevGuideSaveTimer = null;
+
+function niSyncDeviationGuideToCurrentSnapshot() {
+    const cfg = extension_settings[EXT_NAME];
+    const key = S.novelKey || cfg?._novelKey || '';
+    if (!key || !Array.isArray(cfg?.novelLibrary)) return;
+    const snap = cfg.novelLibrary.find(s => s?.data?._novelKey === key);
+    if (snap?.data) snap.data._deviationGuide = S.deviationGuide || '';
+}
+
+async function niSaveDeviationGuideNow() {
+    const el = q('#ni-dev-result');
+    if (el) S.deviationGuide = el.value;
+    niSyncDeviationGuideToCurrentSnapshot();
+    niSaveSettings();
+    if (!S.novelKey) return false;
+    try {
+        await niServerSaveHeavy(S.novelKey, S.heavyFileKey);
+        return true;
+    } catch (e) {
+        console.warn('[NI] 偏差文本自动保存失败:', e);
+        return false;
+    }
+}
+
+function niQueueDeviationGuideSave({ immediate = false } = {}) {
+    if (_niDevGuideSaveTimer) {
+        clearTimeout(_niDevGuideSaveTimer);
+        _niDevGuideSaveTimer = null;
+    }
+    if (immediate) return niSaveDeviationGuideNow();
+    const el = q('#ni-dev-result');
+    if (el) S.deviationGuide = el.value;
+    niSyncDeviationGuideToCurrentSnapshot();
+    niSaveSettings();
+    if (!S.novelKey) return Promise.resolve(false);
+    _niDevGuideSaveTimer = setTimeout(() => {
+        _niDevGuideSaveTimer = null;
+        niSaveDeviationGuideNow();
+    }, 900);
+    return Promise.resolve(true);
 }
 
 // 从服务端读取重数据并还原到工作区 S（novelKey 对应的文件）
@@ -1167,9 +1277,16 @@ function niSaveSettings() {
     cfg.charInjPos  = parseInt(q('#ni-char-inj-pos')?.value) ?? DEFAULT_SETTINGS.charInjPos;
     cfg.charInjDepth= parseInt(q('#ni-char-inj-depth')?.value) ?? DEFAULT_SETTINGS.charInjDepth;
     cfg.charInjRole = parseInt(q('#ni-char-inj-role')?.value) ?? DEFAULT_SETTINGS.charInjRole;
+    cfg.charAutoSleepEnabled = q('#ni-char-auto-sleep-btn')
+        ? q('#ni-char-auto-sleep-btn').classList.contains('on')
+        : (cfg.charAutoSleepEnabled ?? DEFAULT_SETTINGS.charAutoSleepEnabled);
     cfg.plotInjPos  = parseInt(q('#ni-plot-inj-pos')?.value) ?? DEFAULT_SETTINGS.plotInjPos;
     cfg.plotInjDepth= parseInt(q('#ni-plot-inj-depth')?.value) ?? DEFAULT_SETTINGS.plotInjDepth;
     cfg.plotInjRole = parseInt(q('#ni-plot-inj-role')?.value) ?? DEFAULT_SETTINGS.plotInjRole;
+    cfg.devPrompt   = q('#ni-dev-pt-content')?.value || cfg.devPrompt || DEFAULT_SETTINGS.devPrompt;
+    cfg.devInjPos   = niCfgInt('#ni-dev-inj-pos', DEFAULT_SETTINGS.devInjPos);
+    cfg.devInjDepth = niCfgInt('#ni-dev-inj-depth', DEFAULT_SETTINGS.devInjDepth);
+    cfg.devInjRole  = niCfgInt('#ni-dev-inj-role', DEFAULT_SETTINGS.devInjRole);
     cfg.rawInjMode  = q('#ni-raw-inj-mode')?.value ?? DEFAULT_SETTINGS.rawInjMode;
     cfg.chunkKb     = parseInt(q('#ni-chunk-kb')?.value) || DEFAULT_SETTINGS.chunkKb;
     cfg.customPrompt    = q('#ni-pt-content')?.value || CLEAN_PROMPT;
@@ -1258,9 +1375,13 @@ function syncSettingsToUI() {
     sv('#ni-char-inj-pos', cfg.charInjPos  ?? DEFAULT_SETTINGS.charInjPos);
     sv('#ni-char-inj-depth',cfg.charInjDepth?? DEFAULT_SETTINGS.charInjDepth);
     sv('#ni-char-inj-role',cfg.charInjRole ?? DEFAULT_SETTINGS.charInjRole);
+    niSyncCharAutoSleepUI();
     sv('#ni-plot-inj-pos', cfg.plotInjPos  ?? DEFAULT_SETTINGS.plotInjPos);
     sv('#ni-plot-inj-depth',cfg.plotInjDepth?? DEFAULT_SETTINGS.plotInjDepth);
     sv('#ni-plot-inj-role',cfg.plotInjRole ?? DEFAULT_SETTINGS.plotInjRole);
+    sv('#ni-dev-inj-pos', cfg.devInjPos  ?? DEFAULT_SETTINGS.devInjPos);
+    sv('#ni-dev-inj-depth',cfg.devInjDepth?? DEFAULT_SETTINGS.devInjDepth);
+    sv('#ni-dev-inj-role',cfg.devInjRole ?? DEFAULT_SETTINGS.devInjRole);
     sv('#ni-raw-inj-mode', cfg.rawInjMode  ?? DEFAULT_SETTINGS.rawInjMode);
     sv('#ni-global-head-inj-pos', cfg.globalHeadInjPos ?? DEFAULT_SETTINGS.globalHeadInjPos);
     sv('#ni-global-head-inj-depth', cfg.globalHeadInjDepth ?? DEFAULT_SETTINGS.globalHeadInjDepth);
@@ -1281,6 +1402,9 @@ function syncSettingsToUI() {
     sv('#ni-style-mode',      cfg.styleMode      ?? DEFAULT_SETTINGS.styleMode);
     const stylePtEl = q('#ni-style-pt-content');
     if (stylePtEl) stylePtEl.value = cfg.stylePrompt || STYLE_PROMPT;
+    const devPtEl = q('#ni-dev-pt-content');
+    if (devPtEl) devPtEl.value = cfg.devPrompt || DEFAULT_SETTINGS.devPrompt;
+    niSyncDeviationResultUI({ collapsed: true });
     // Bug修复②③：始终刷新文风结果 UI，有内容则显示，无内容则隐藏
     {
         const resEl = q('#ni-style-result');
@@ -1327,6 +1451,26 @@ const niCfgInt = (sel, fallback) => {
     const n = parseInt(q(sel)?.value, 10);
     return Number.isFinite(n) ? n : fallback;
 };
+
+function niSyncDeviationResultUI({ collapsed = true, preserveBody = false } = {}) {
+    const text = String(S.deviationGuide || '').trim();
+    const wrap = q('#ni-dev-result-wrap');
+    const body = q('#ni-dev-result-body');
+    const icon = q('#ni-dev-result-toggle i:last-child');
+    const resEl = q('#ni-dev-result');
+    if (resEl && resEl.value !== (S.deviationGuide || '')) resEl.value = S.deviationGuide || '';
+    if (wrap) wrap.style.display = text ? 'block' : 'none';
+    niSyncDevButtonLabel();
+    if (!body) return;
+    if (!text) {
+        body.style.display = 'none';
+        if (icon) icon.className = 'ti ti-chevron-down';
+        return;
+    }
+    if (!preserveBody) body.style.display = collapsed ? 'none' : 'block';
+    const isOpen = body.style.display !== 'none';
+    if (icon) icon.className = isOpen ? 'ti ti-chevron-up' : 'ti ti-chevron-down';
+}
 
 // ============================================================
 // 页面切换
@@ -3989,7 +4133,16 @@ function renderCharacters() {
     }
     const filtered = S.characters
         .map((c, i) => ({ c, i }))
-        .filter(({ c }) => (c.role || '其他') === _charTab);
+        .filter(({ c }) => (c.role || '其他') === _charTab)
+        .sort((a, b) => {
+            const aOff = a.c.enabled === false ? 1 : 0;
+            const bOff = b.c.enabled === false ? 1 : 0;
+            if (aOff !== bOff) return aOff - bOff;
+            const aStage = getCharFirstStage(a.c) ?? Number.MAX_SAFE_INTEGER;
+            const bStage = getCharFirstStage(b.c) ?? Number.MAX_SAFE_INTEGER;
+            if (aStage !== bStage) return aStage - bStage;
+            return a.i - b.i;
+        });
 
     if (!filtered.length) {
         list.innerHTML = '<div class="ni-empty"><i class="ti ti-ghost"></i>该分类暂无角色</div>';
@@ -3999,6 +4152,13 @@ function renderCharacters() {
     list.innerHTML = filtered.map(({ c, i }) => {
         const av = (c.name || '?').charAt(0);
         const enabled = c.enabled !== false;
+        const autoSleepStage = parseInt(c._autoSleepStage, 10);
+        const autoSleepTitle = Number.isNaN(autoSleepStage)
+            ? '该角色已由自动休眠关闭'
+            : `该角色未在第 ${autoSleepStage} 阶段正文中出现，已由自动休眠关闭`;
+        const autoSleepBadge = (!enabled && c._autoSleep)
+            ? `<div class="ni-char-sleep-badge" title="${niEscAttr(autoSleepTitle)}">自动休眠</div>`
+            : '';
         const fields = [
             { key: 'identity',    icon: 'ti-id-badge',  label: '身份背景' },
             { key: 'appearance',  icon: 'ti-eye',        label: '外貌'     },
@@ -4052,7 +4212,7 @@ function renderCharacters() {
                     <div class="ni-char-name">${niEscHtml(c.name)}</div>
                     <button class="ni-char-ai-one-btn" data-char-idx="${i}" title="AI 更新此角色人设" aria-label="AI 更新此角色人设"><i class="ti ti-sparkles" aria-hidden="true"></i></button>
                   </div>
-                  <div class="ni-char-role-row"><div class="ni-char-role">${niEscHtml(c.role || '其他')}</div>${c.gender ? `<div class="ni-char-gender">${niEscHtml(c.gender)}</div>` : ''}</div>
+                  <div class="ni-char-role-row"><div class="ni-char-role">${niEscHtml(c.role || '其他')}</div>${c.gender ? `<div class="ni-char-gender">${niEscHtml(c.gender)}</div>` : ''}${autoSleepBadge}</div>
                   ${(() => { const fs = getCharFirstStage(c); return fs != null ? `<button class="ni-char-stage-tag" data-stage-idx="${fs}">初次登场：第 ${fs} 阶段</button>` : ''; })()}
                 </div>
               </div>
@@ -4434,6 +4594,131 @@ function getCharFirstStage(c) {
     return S.stageMap[c._firstChunkIdx] ?? S.stageMap[String(c._firstChunkIdx)] ?? null;
 }
 
+function niCharAutoSleepEnabled() {
+    const cfg = extension_settings[EXT_NAME] || {};
+    return (cfg.charAutoSleepEnabled ?? DEFAULT_SETTINGS.charAutoSleepEnabled) !== false;
+}
+
+function niSyncCharAutoSleepUI() {
+    const btn = q('#ni-char-auto-sleep-btn');
+    const note = q('#ni-char-auto-sleep-note');
+    const enabled = niCharAutoSleepEnabled();
+    if (btn) {
+        btn.classList.toggle('on', enabled);
+        btn.title = enabled
+            ? '开启阶段时，自动关闭本阶段正文未出现的非主角人设；主角和代入角色保留'
+            : '自动休眠已关闭';
+    }
+    if (note) note.textContent = '关闭长期未出场角色注入';
+}
+
+function niClearCharAutoSleep(c) {
+    if (!c) return;
+    delete c._autoSleep;
+    delete c._autoSleepStage;
+    delete c._autoSleepAt;
+}
+
+function niIsUserSubProtectedChar(c, idx) {
+    const cfg = niGetUserSubConfig();
+    if (!cfg.userSubEnabled) return false;
+    const selectedIdx = parseInt(cfg.userSubCharIdx, 10);
+    if (!Number.isNaN(selectedIdx) && selectedIdx === idx) return true;
+    const selectedName = niGetSelectedUserSubCharName();
+    return !!selectedName && _isSameChar(c, { name: selectedName });
+}
+
+function niCharPresenceTerms(c) {
+    const terms = [];
+    const addTerm = (text, kind = '') => {
+        const t = String(text || '').trim();
+        if (!t || t === '<user>' || /^user$/i.test(t)) return;
+        if (t.length < 2) return;
+        if ((kind || '').toLowerCase() === 'title' && t.length < 3) return;
+        if (!terms.includes(t)) terms.push(t);
+    };
+    addTerm(c?.name);
+    (Array.isArray(c?.aliases) ? c.aliases : []).forEach(alias => addTerm(alias?.text, alias?.kind));
+    return terms.sort((a, b) => b.length - a.length);
+}
+
+function niNormalizePresenceText(text) {
+    return String(text || '').toLowerCase().replace(/\s+/g, '');
+}
+
+function niPresenceHasTerm(normalizedText, term) {
+    const needle = niNormalizePresenceText(term);
+    return !!needle && normalizedText.includes(needle);
+}
+
+function niGetStageChunkIdxSet(stageIdx) {
+    const chunkIdxSet = new Set();
+    if (S.chunkStageMap) {
+        Object.entries(S.chunkStageMap).forEach(([rci, stageSet]) => {
+            if (stageSet?.has?.(stageIdx)) chunkIdxSet.add(Number(rci));
+        });
+    }
+    if (!chunkIdxSet.size) {
+        const nodes = getNodesForStage(stageIdx);
+        niMergeStageNodes(nodes).forEach(p => {
+            if (p?._chunkIdx != null) chunkIdxSet.add(Number(p._chunkIdx));
+        });
+    }
+    return chunkIdxSet;
+}
+
+async function niBuildStageTextForCharAutoSleep(stageIdx) {
+    const hasRawChunks = Array.isArray(S.chunks) && S.chunks.some(t => String(t || '').trim());
+    if (!hasRawChunks && !niHasLoadedChunks()) {
+        try { await niEnsureChunksLoaded(); } catch (e) { console.warn('[NI] 自动休眠加载压缩正文失败:', e); }
+    }
+    const chunkIdxSet = niGetStageChunkIdxSet(stageIdx);
+    const parts = [...chunkIdxSet]
+        .sort((a, b) => a - b)
+        .map(ci => {
+            const raw = String(S.chunks?.[ci] || '').trim();
+            if (raw) return raw;
+            return String(S.chunkResults?.[ci] || '').trim();
+        })
+        .filter(Boolean);
+    if (parts.length) return parts.join('\n');
+
+    const nodes = niMergeStageNodes(getNodesForStage(stageIdx));
+    return nodes.map(p => [p.title, p.time, p.location, p.body || p.content].filter(Boolean).join('\n')).join('\n');
+}
+
+async function niRunCharAutoSleepForStage(stageIdx) {
+    if (!niCharAutoSleepEnabled() || !S.characters?.length) return 0;
+    const stageText = await niBuildStageTextForCharAutoSleep(stageIdx);
+    const normalizedText = niNormalizePresenceText(stageText);
+    if (!normalizedText) return 0;
+
+    let closed = 0;
+    S.characters.forEach((c, idx) => {
+        if (!c?.name || c.enabled === false) return;
+        if ((c.role || '其他') === '主角') return;
+        if (niIsUserSubProtectedChar(c, idx)) return;
+        const terms = niCharPresenceTerms(c);
+        if (!terms.length) return;
+        const appeared = terms.some(term => niPresenceHasTerm(normalizedText, term));
+        if (appeared) return;
+        c.enabled = false;
+        c._autoSleep = true;
+        c._autoSleepStage = stageIdx;
+        c._autoSleepAt = Date.now();
+        closed++;
+    });
+
+    if (closed > 0) {
+        niSaveSettings();
+        renderCharacters();
+        niRenderStageDrawer();
+        toastr?.info(`自动休眠 ${closed} 个未在第 ${stageIdx} 阶段正文出现的角色`);
+    }
+    return closed;
+}
+window.niRunCharAutoSleepForStage = niRunCharAutoSleepForStage;
+
 function niGetUserSubConfig() {
     const cfg = extension_settings[EXT_NAME] || {};
     if (!Array.isArray(cfg.userSubAliases)) cfg.userSubAliases = [];
@@ -4697,6 +4982,7 @@ function niToggleCharsByStage(stageIdx, enable) {
         if (c.role === '主角') return;            // 主角始终跳过
         if (getCharFirstStage(c) !== stageIdx) return;
         c.enabled = enable;
+        niClearCharAutoSleep(c);
     });
     niSaveSettings();
     renderCharacters();
@@ -5493,21 +5779,26 @@ function niToggleStage(i) {
             if (c.role === '主角') return;
             if (getCharFirstStage(c) !== i) return;
             c.enabled = true;
+            niClearCharAutoSleep(c);
         });
         renderCharacters();
         niRenderStageDrawer();
-        // 自动触发一次 AI 实时更新人设（静默执行，不阻塞）
-        // 初次登场的角色（firstStage === i）直接排除，不参与本次 AI 更新
-        const firstAppearIdxSet = new Set(
-            S.characters
-                .map((c, idx) => ({ c, idx }))
-                .filter(({ c }) => getCharFirstStage(c) === i)
-                .map(({ idx }) => idx)
-        );
-        const hasNonFirstChar = S.characters.some(
-            (c, idx) => c.enabled && !firstAppearIdxSet.has(idx)
-        );
-        if (hasNonFirstChar) niGenCharsManual(true, firstAppearIdxSet);
+        Promise.resolve(niRunCharAutoSleepForStage(i))
+            .catch(e => console.warn('[NI] 自动休眠角色失败:', e))
+            .finally(() => {
+                // 自动触发一次 AI 实时更新人设（静默执行，不阻塞）
+                // 初次登场的角色（firstStage === i）直接排除，不参与本次 AI 更新
+                const firstAppearIdxSet = new Set(
+                    S.characters
+                        .map((c, idx) => ({ c, idx }))
+                        .filter(({ c }) => getCharFirstStage(c) === i)
+                        .map(({ idx }) => idx)
+                );
+                const hasNonFirstChar = S.characters.some(
+                    (c, idx) => c.enabled && !firstAppearIdxSet.has(idx)
+                );
+                if (hasNonFirstChar) niGenCharsManual(true, firstAppearIdxSet);
+            });
     }
     // 强制刷新阶段列表，确保向量化状态标签正确显示
     buildStages();
@@ -6271,12 +6562,79 @@ async function recallRelevant(queryText, stageList) {
 // ============================================================
 // 偏差分析
 // ============================================================
+function niDevCleanText(v) {
+    return String(v ?? '').trim();
+}
+
+function niDevLines(title, items) {
+    const arr = Array.isArray(items) ? items.map(niDevCleanText).filter(Boolean) : [];
+    if (!arr.length) return '';
+    return `【${title}】\n${arr.map(t => `- ${t}`).join('\n')}`;
+}
+
+function niBuildDeviationGuideFromAnalysis(json) {
+    if (!json || typeof json !== 'object') return '';
+    const parts = [];
+    const guide = niDevCleanText(json.deviation_injection_prompt);
+    if (guide) parts.push(`【当前偏差约束】\n${guide}`);
+
+    const major = Array.isArray(json.major_deviations) ? json.major_deviations : [];
+    const majorLines = major.map(item => {
+        if (!item || typeof item !== 'object') return '';
+        const type = niDevCleanText(item.type);
+        const original = niDevCleanText(item.original_fact);
+        const current = niDevCleanText(item.current_fact);
+        const impact = niDevCleanText(item.impact);
+        const lock = item.irreversible ? '；约束：不得用同一事件、同一事故或同一理由强行恢复原著结果' : '';
+        const head = type ? `【${type}】` : '';
+        return `- ${head}原著：${original || '未提供'}；当前：${current || '未提供'}${impact ? `；影响：${impact}` : ''}${lock}`;
+    }).filter(Boolean);
+    if (majorLines.length) parts.push(`【主要偏差】\n${majorLines.join('\n')}`);
+
+    const changed = niDevLines('已改变事实', json.changed_facts);
+    if (changed) parts.push(changed);
+    const preserved = niDevLines('仍保留的原著事实', json.preserved_facts);
+    if (preserved) parts.push(preserved);
+
+    return parts.join('\n\n').trim();
+}
+
+function niDevButtonLabel() {
+    const text = (q('#ni-dev-result')?.value || S.deviationGuide || '').trim();
+    return text ? '更新当前偏差' : '分析当前偏差';
+}
+
+function niSyncDevButtonLabel() {
+    const btn = q('#ni-btn-dev');
+    if (!btn || btn.disabled) return;
+    btn.innerHTML = `<i class="ti ti-analyze"></i>${niDevButtonLabel()}`;
+}
+
+function niBuildDeviationPrompt(promptTemplate, reference, recentMsgs, existingDeviation) {
+    const existingText = (existingDeviation || '').trim();
+    const existingBlock = existingText || '（无）';
+    const hasExistingSlot = /\{EXISTING(?:_DEVIATION)?\}/.test(promptTemplate || '');
+    let prompt = (promptTemplate || DEV_PROMPT)
+        .replace(/\{REFERENCE\}/g, reference.slice(0, 3000))
+        .replace(/\{CURRENT\}/g, recentMsgs.slice(0, 2000))
+        .replace(/\{EXISTING(?:_DEVIATION)?\}/g, existingBlock.slice(0, 3000));
+
+    // 兼容用户保存过旧版/自定义提示词：没有占位符时仍注入旧偏差档案。
+    if (existingText && !hasExistingSlot) {
+        prompt += `\n\n【偏差档案更新补充要求】\n以下是此前已经保存的当前偏差档案，代表当前分支现实中已经成立且仍需遵守的事实。除非当前正文明确推翻、改写或自然修正，否则不得删除、遗忘或降级。死亡、身份暴露、关系断裂、阵营改变、地点转移、能力变化、已完成的关键行动等硬事实，即使最近正文没有再次提到，也必须默认保留。请输出更新后的完整偏差档案，而不是只输出本次新增内容。\n<existing_deviation>\n${existingBlock.slice(0, 3000)}\n</existing_deviation>`;
+    }
+
+    return prompt;
+}
+
 async function niRunDev() {
     const btn = q('#ni-btn-dev');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i>分析中…'; }
 
     const devPanel = q('#ni-dev-panel');
     if (devPanel) devPanel.style.display = 'block';
+    const existingDeviation = (q('#ni-dev-result')?.value || S.deviationGuide || '').trim();
+    S.deviationGuide = existingDeviation;
 
     // 取当前对话最近 10 条消息
     const ctx = getContext();
@@ -6291,7 +6649,7 @@ async function niRunDev() {
 
     if (!enabledStages.length) {
         if (devPanel) q('#ni-dev-note').textContent = '没有已开启的阶段，请先在「阶段」页开启至少一个阶段。';
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-analyze"></i>分析当前偏差'; }
+        if (btn) { btn.disabled = false; niSyncDevButtonLabel(); }
         return;
     }
 
@@ -6339,13 +6697,14 @@ async function niRunDev() {
 
     if (!reference.trim()) {
         if (devPanel) q('#ni-dev-note').textContent = '未能获取参考内容（已向量阶段：无语义召回结果；未向量阶段：无剧情节点或概括文本）。';
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-analyze"></i>分析当前偏差'; }
+        if (btn) { btn.disabled = false; niSyncDevButtonLabel(); }
         return;
     }
 
-    const prompt = DEV_PROMPT
-        .replace('{REFERENCE}', reference.slice(0, 3000))
-        .replace('{CURRENT}', recentMsgs.slice(0, 2000));
+    const promptTemplate = q('#ni-dev-pt-content')?.value
+        || extension_settings[EXT_NAME]?.devPrompt
+        || DEV_PROMPT;
+    const prompt = niBuildDeviationPrompt(promptTemplate, reference, recentMsgs, existingDeviation);
 
     try {
         const raw = await callCleanApi([{ role: 'user', content: prompt }]);
@@ -6357,11 +6716,15 @@ async function niRunDev() {
             animateBar(`ni-d${i}`, `ni-s${i}`, val);
         });
         q('#ni-dev-note').textContent = json.summary || '';
+        const nextGuide = niBuildDeviationGuideFromAnalysis(json);
+        S.deviationGuide = nextGuide || existingDeviation;
+        niSyncDeviationResultUI({ collapsed: true });
+        await niQueueDeviationGuideSave({ immediate: true });
     } catch (e) {
         q('#ni-dev-note').textContent = `分析失败: ${e.message}`;
     }
 
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-analyze"></i>分析当前偏差'; }
+    if (btn) { btn.disabled = false; niSyncDevButtonLabel(); }
 }
 window.niRunDev = niRunDev;
 
@@ -6802,6 +7165,16 @@ async function onPromptReady(eventData) {
     if (worldLines.length) {
         const worldContent = `[世界设定]\n${worldLines.join('\n\n')}\n[/世界设定]`;
         doInject(`${EXT_NAME}_world`, worldContent, worldPos, worldDepth, worldRole);
+    }
+
+    // ── 偏差注入 ──
+    const deviationGuide = (q('#ni-dev-result')?.value || S.deviationGuide || '').trim();
+    if (deviationGuide) {
+        S.deviationGuide = deviationGuide;
+        const devPos   = cfg.devInjPos   ?? DEFAULT_SETTINGS.devInjPos;
+        const devDepth = cfg.devInjDepth ?? DEFAULT_SETTINGS.devInjDepth;
+        const devRole  = cfg.devInjRole  ?? DEFAULT_SETTINGS.devInjRole;
+        doInject(`${EXT_NAME}_dev`, `[当前剧情偏差约束]\n${deviationGuide}\n[/当前剧情偏差约束]`, devPos, devDepth, devRole);
     }
 
     // ── 文风注入 ──
@@ -7307,6 +7680,7 @@ async function niSaveNovelSnapshot(name) {
                 : undefined,
             _worldCategories: niGetWorldCategories(),
             _styleGuide: S.styleGuide || '',
+            _deviationGuide: S.deviationGuide || '',
         }),
     };
     cfg.novelLibrary.push(snap);
@@ -7351,6 +7725,7 @@ async function niUpdateNovelSnapshot(idx) {
             : undefined,
         _worldCategories: niGetWorldCategories(),
         _styleGuide: S.styleGuide || '',
+        _deviationGuide: S.deviationGuide || '',
     });
     niSaveSettings();
     niRenderNovelLibrary();
@@ -7406,11 +7781,13 @@ async function niLoadNovelSnapshot(idx) {
     if (d._worldCategories) S.worldCategories = d._worldCategories;
     // Bug修复③：还原文风并立即刷新 UI（避免切换小说后文风显隐状态残留）
     S.styleGuide = (d._styleGuide != null) ? d._styleGuide : '';
+    S.deviationGuide = (d._deviationGuide != null) ? d._deviationGuide : '';
     {
         const resEl = q('#ni-style-result');
         if (resEl) resEl.value = S.styleGuide;
         const wrap = q('#ni-style-result-wrap');
         if (wrap) wrap.style.display = S.styleGuide ? 'block' : 'none';
+        niSyncDeviationResultUI({ collapsed: true });
     }
 
     // 从服务端拉取 core 重数据；压缩正文 chunks 按需懒加载
@@ -7425,6 +7802,13 @@ async function niLoadNovelSnapshot(idx) {
         }
     }
     await niReconcileVecStateFromDb();
+    {
+        const resEl = q('#ni-style-result');
+        if (resEl) resEl.value = S.styleGuide || '';
+        const wrap = q('#ni-style-result-wrap');
+        if (wrap) wrap.style.display = S.styleGuide ? 'block' : 'none';
+        niSyncDeviationResultUI({ collapsed: true });
+    }
 
     niSaveSettings();
     if (S.cleanDone) {
@@ -7475,10 +7859,12 @@ async function niDeleteNovelSnapshot(idx) {
             characters: [], plots: { main: [], sub: [], pivot: [] },
             stageStates: {}, stageSummaries: {}, stageTitles: {}, stageMap: {}, stageMapN: 0,
             vecDone: false, stageVecDone: {}, novelKey: '', heavyFileKey: '',
+            styleGuide: '', deviationGuide: '',
         });
         ['_characters','_plots','_stageStates','_stageSummaries','_stageTitles',
          '_chunkResults','_chunkStatus','_novelKey','_vecDone','_stageVecDone',
-         '_cleanDone','_stageMap','_stageMapN','_chunkStageMap','_heavyFileKey'].forEach(k => { delete cfg[k]; });
+         '_cleanDone','_stageMap','_stageMapN','_chunkStageMap','_heavyFileKey',
+         '_styleGuide','_deviationGuide'].forEach(k => { delete cfg[k]; });
         S.chunkStageMap = null;
         S.worldCategories = null;
         // 重置 UI
@@ -7486,6 +7872,9 @@ async function niDeleteNovelSnapshot(idx) {
         q('#ni-u-ok') && (q('#ni-u-ok').style.display = 'none');
         q('#ni-uz') && q('#ni-uz').classList.remove('loaded');
         q('#ni-u-label') && (q('#ni-u-label').textContent = '点击上传 .txt 文件');
+        q('#ni-style-result') && (q('#ni-style-result').value = '');
+        q('#ni-style-result-wrap') && (q('#ni-style-result-wrap').style.display = 'none');
+        niSyncDeviationResultUI({ collapsed: true });
         renderPlots(); renderCharacters(); buildStages(); niRenderWorldSettings();
         niSyncCleanButtonState();
     }
@@ -7549,6 +7938,7 @@ async function niExportData() {
                 : undefined,
             _worldCategories: niGetWorldCategories(),
             _styleGuide: S.styleGuide || '',
+            _deviationGuide: S.deviationGuide || '',
             // Bug修复①②：导出时记录当前小说的名称，导入时直接使用，不依赖novelLibrary顺序
             _currentNovelName: (function() {
                 const lib = (extension_settings[EXT_NAME]?.novelLibrary) || [];
@@ -7641,7 +8031,7 @@ async function niImportData(file) {
                     || `导入-${new Date().toLocaleDateString()}`;
                 const heavyFileKey = niSnapshotFileKey(snapName, importedKey);
                 // 旧版 JSON 里重数据直接写服务端文件，snap.data 只存轻量字段
-                const oldS = { characters: S.characters, plots: S.plots, chunkResults: S.chunkResults, chunkMeta: S.chunkMeta, chunkStatus: S.chunkStatus, styleGuide: S.styleGuide };
+                const oldS = { characters: S.characters, plots: S.plots, chunkResults: S.chunkResults, chunkMeta: S.chunkMeta, chunkStatus: S.chunkStatus, styleGuide: S.styleGuide, deviationGuide: S.deviationGuide };
                 S.characters   = rt._characters   || [];
                 S.plots        = rt._plots        || { main: [], sub: [], pivot: [] };
                 niNormalizePlotCollections();
@@ -7649,6 +8039,7 @@ async function niImportData(file) {
                 S.chunkMeta    = rt._chunkMeta    || [];
                 S.chunkStatus  = rt._chunkStatus  || [];
                 S.styleGuide   = rt._styleGuide   || '';
+                S.deviationGuide = rt._deviationGuide || '';
                 let heavyWriteNote = '';
                 try {
                     await niServerSaveHeavy(importedKey, heavyFileKey);
@@ -7660,6 +8051,7 @@ async function niImportData(file) {
                 S.characters = oldS.characters; S.plots = oldS.plots;
                 S.chunkResults = oldS.chunkResults; S.chunkMeta = oldS.chunkMeta; S.chunkStatus = oldS.chunkStatus;
                 S.styleGuide = oldS.styleGuide;
+                S.deviationGuide = oldS.deviationGuide;
 
                 cfg.novelLibrary.push({
                     name: snapName,
@@ -7681,6 +8073,7 @@ async function niImportData(file) {
                         _chunkStageMap:  rt._chunkStageMap,
                         _worldCategories:rt._worldCategories,
                         _styleGuide:     rt._styleGuide || '',
+                        _deviationGuide: rt._deviationGuide || '',
                     }),
                 });
                 saveSettingsDebounced();
@@ -7766,7 +8159,7 @@ async function niImportData(file) {
         }
 
         // 把重数据写服务端文件（暂存到 S 再写再还原）
-        const oldS2 = { characters: S.characters, plots: S.plots, chunkResults: S.chunkResults, chunkMeta: S.chunkMeta, chunkStatus: S.chunkStatus, styleGuide: S.styleGuide };
+        const oldS2 = { characters: S.characters, plots: S.plots, chunkResults: S.chunkResults, chunkMeta: S.chunkMeta, chunkStatus: S.chunkStatus, styleGuide: S.styleGuide, deviationGuide: S.deviationGuide };
         S.characters   = rt._characters   || [];
         S.plots        = rt._plots        || { main: [], sub: [], pivot: [] };
         niNormalizePlotCollections();
@@ -7774,6 +8167,7 @@ async function niImportData(file) {
         S.chunkMeta    = rt._chunkMeta    || [];
         S.chunkStatus  = rt._chunkStatus  || [];
         S.styleGuide   = rt._styleGuide   || '';
+        S.deviationGuide = rt._deviationGuide || '';
         let heavyWriteNote2 = '';
         try {
             await niServerSaveHeavy(importedKey, heavyFileKey);
@@ -7784,6 +8178,7 @@ async function niImportData(file) {
         S.characters = oldS2.characters; S.plots = oldS2.plots;
         S.chunkResults = oldS2.chunkResults; S.chunkMeta = oldS2.chunkMeta; S.chunkStatus = oldS2.chunkStatus;
         S.styleGuide = oldS2.styleGuide;
+        S.deviationGuide = oldS2.deviationGuide;
 
         // 添加快照到小说库（snap.data 只存轻量字段）
         if (!cfg.novelLibrary) cfg.novelLibrary = [];
@@ -7807,6 +8202,7 @@ async function niImportData(file) {
                 _chunkStageMap:  rt._chunkStageMap,
                 _worldCategories:rt._worldCategories,
                 _styleGuide:     rt._styleGuide || '',
+                _deviationGuide: rt._deviationGuide || '',
             }),
         });
         saveSettingsDebounced();
@@ -7856,6 +8252,7 @@ async function niClearAllData() {
             characters: [], plots: { main: [], sub: [], pivot: [] },
             stageStates: {}, stageSummaries: {}, stageTitles: {}, stageMap: {}, stageMapN: 0,
             vecDone: false, stageVecDone: {}, novelKey: '', heavyFileKey: '',
+            styleGuide: '', deviationGuide: '',
         });
         const cfg = extension_settings[EXT_NAME];
         if (oldNovelKey && Array.isArray(cfg.novelLibrary)) {
@@ -7863,7 +8260,8 @@ async function niClearAllData() {
         }
         ['_characters','_plots','_stageStates','_stageSummaries','_stageTitles',
          '_chunkResults','_chunkStatus','_novelKey','_vecDone','_stageVecDone',
-         '_cleanDone','_stageMap','_stageMapN','_chunkStageMap','_heavyFileKey'].forEach(k => { delete cfg[k]; });
+         '_cleanDone','_stageMap','_stageMapN','_chunkStageMap','_heavyFileKey',
+         '_styleGuide','_deviationGuide'].forEach(k => { delete cfg[k]; });
         S.chunkStageMap = null;
         S.worldCategories = null;
         saveSettingsDebounced();
@@ -7871,6 +8269,9 @@ async function niClearAllData() {
         q('#ni-u-ok') && (q('#ni-u-ok').style.display = 'none');
         q('#ni-uz') && q('#ni-uz').classList.remove('loaded');
         q('#ni-u-label') && (q('#ni-u-label').textContent = '点击上传 .txt 文件');
+        q('#ni-style-result') && (q('#ni-style-result').value = '');
+        q('#ni-style-result-wrap') && (q('#ni-style-result-wrap').style.display = 'none');
+        niSyncDeviationResultUI({ collapsed: true });
         renderPlots(); renderCharacters(); buildStages(); niRenderWorldSettings();
         niRenderNovelLibrary();
         niSyncCleanButtonState();
@@ -8163,7 +8564,7 @@ jQuery(async () => {
         const body = document.getElementById('ni-inj-body');
         if (body) body.style.display = body.style.display === 'none' ? '' : 'none';
     });
-    $app.on('input change', '#ni-inj-depth, #ni-recall-topk, #ni-recall-thresh, #ni-vec-msg-tag, #ni-vec-msg-count, #ni-vec-inj-pos, #ni-vec-inj-role, #ni-char-inj-pos, #ni-char-inj-depth, #ni-char-inj-role, #ni-plot-inj-pos, #ni-plot-inj-depth, #ni-plot-inj-role, #ni-global-head-inj-pos, #ni-global-head-inj-depth, #ni-global-head-inj-role, #ni-global-tail-inj-pos, #ni-global-tail-inj-depth, #ni-global-tail-inj-role', () => niSaveSettings());
+    $app.on('input change', '#ni-inj-depth, #ni-recall-topk, #ni-recall-thresh, #ni-vec-msg-tag, #ni-vec-msg-count, #ni-vec-inj-pos, #ni-vec-inj-role, #ni-char-inj-pos, #ni-char-inj-depth, #ni-char-inj-role, #ni-plot-inj-pos, #ni-plot-inj-depth, #ni-plot-inj-role, #ni-dev-inj-pos, #ni-dev-inj-depth, #ni-dev-inj-role, #ni-global-head-inj-pos, #ni-global-head-inj-depth, #ni-global-head-inj-role, #ni-global-tail-inj-pos, #ni-global-tail-inj-depth, #ni-global-tail-inj-role', () => niSaveSettings());
     $app.on('change', '#ni-raw-inj-mode', async () => { niSaveSettings(); await niBuildStagesWithChunksIfNeeded(); }); // 切换注入模式时刷新 token 估算
 
     // 注入设置手风琴切换
@@ -8274,6 +8675,34 @@ jQuery(async () => {
 
     // 偏差分析
     $app.on('click', '#ni-btn-dev', () => niRunDev());
+    $app.on('click', '#ni-dev-prompt-btn', () => {
+        niTogglePanel('ni-dev-pb', 'ni-dev-prompt-btn');
+    });
+    $app.on('input', '#ni-dev-pt-content', () => niSaveSettings());
+    $app.on('click', '#ni-dev-pt-reset', () => {
+        const el = q('#ni-dev-pt-content');
+        if (el) el.value = DEV_PROMPT;
+        niSaveSettings();
+    });
+    $app.on('input', '#ni-dev-result', function() {
+        S.deviationGuide = this.value;
+        if (this.value.trim()) niSyncDeviationResultUI({ preserveBody: true });
+        else niSyncDevButtonLabel();
+        niQueueDeviationGuideSave();
+    });
+    $app.on('blur', '#ni-dev-result', async function() {
+        S.deviationGuide = this.value;
+        await niQueueDeviationGuideSave({ immediate: true });
+        niSyncDeviationResultUI({ preserveBody: true });
+    });
+    $app.on('click', '#ni-dev-result-toggle', () => {
+        const body = q('#ni-dev-result-body');
+        const btn  = q('#ni-dev-result-toggle i:last-child');
+        if (!body) return;
+        const isOpen = body.style.display !== 'none';
+        body.style.display = isOpen ? 'none' : 'block';
+        if (btn) btn.className = isOpen ? 'ti ti-chevron-down' : 'ti ti-chevron-up';
+    });
 
     // 剧情tab切换时记录当前tab，并根据是否时间轴隐藏删除/编辑按钮
     $app.on('click', '.ni-plot-tab-row .ni-tab[data-tab]', function() {
@@ -8465,15 +8894,25 @@ jQuery(async () => {
     $app.on('click', '.ni-char-save-btn', function() {
         niSaveChar(parseInt($(this).data('char-idx')));
     });
+    $app.on('click', '#ni-char-auto-sleep-btn', function() {
+        const cfg = extension_settings[EXT_NAME] || {};
+        cfg.charAutoSleepEnabled = !niCharAutoSleepEnabled();
+        cfg._charAutoSleepInitialized = true;
+        extension_settings[EXT_NAME] = cfg;
+        niSyncCharAutoSleepUI();
+        saveSettingsDebounced();
+    });
     // 单个角色开关（div toggle）
     $app.on('click', '.ni-char-chk', function() {
         const i = parseInt($(this).data('char-idx'));
         if (!S.characters[i]) return;
         const nowOn = !$(this).hasClass('ni-char-chk-on');
         S.characters[i].enabled = nowOn;
+        niClearCharAutoSleep(S.characters[i]);
         $(this).toggleClass('ni-char-chk-on', nowOn);
         q(`#ni-cc-${i}`)?.classList.toggle('ni-char-disabled', !nowOn);
         niSaveSettings();
+        renderCharacters();
     });
     // 原始人设眼睛
     $app.on('click', '.ni-char-eye-raw', function() {
@@ -8493,12 +8932,12 @@ jQuery(async () => {
     });
     // 全开当前 tab 角色
     $app.on('click', '#ni-char-enable-all, #ni-char-enable-all-simple', () => {
-        S.characters.forEach(c => { if ((c.role || '其他') === _charTab) c.enabled = true; });
+        S.characters.forEach(c => { if ((c.role || '其他') === _charTab) { c.enabled = true; niClearCharAutoSleep(c); } });
         niSaveSettings(); renderCharacters();
     });
     // 全关当前 tab 角色
     $app.on('click', '#ni-char-disable-all, #ni-char-disable-all-simple', () => {
-        S.characters.forEach(c => { if ((c.role || '其他') === _charTab) c.enabled = false; });
+        S.characters.forEach(c => { if ((c.role || '其他') === _charTab) { c.enabled = false; niClearCharAutoSleep(c); } });
         niSaveSettings(); renderCharacters();
     });
     // 阶段抽屉：触发按钮开关（按初次登场阶段批量操作，主角不受影响）

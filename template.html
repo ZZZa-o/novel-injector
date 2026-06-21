@@ -7,20 +7,22 @@
       <!-- Upload Card -->
       <div class="ni-card">
         <div class="ni-ctitle"><span class="ni-ctitle-label"><i class="ti ti-file-text"></i>上传小说</span></div>
-        <div class="ni-upload-zone" id="ni-uz">
-          <i class="ti ti-file-upload ni-uz-ico"></i>
-          <div class="ni-u-main" id="ni-u-label">点击上传 .txt 文件</div>
-          <div class="ni-u-hint" id="ni-u-hint">仅支持 .txt，将按设定大小自动分段</div>
-        </div>
-        <div class="ni-u-ok" id="ni-u-ok"><i class="ti ti-circle-check"></i><span id="ni-u-fname"></span></div>
-        <input type="file" id="ni-fi" style="display:none" accept=".txt">
-        <div id="ni-chunk-info" style="display:none">
-          <div class="ni-stat-row">
-            <div class="ni-stat-card"><div class="ni-stat-lbl">文件大小</div><div class="ni-stat-val" id="ni-st-size">—</div></div>
-            <div class="ni-stat-card"><div class="ni-stat-lbl">分段大小</div><div class="ni-stat-val ni-stat-kb-wrap"><input type="number" class="ni-kb-inp ni-kb-inp-stat" id="ni-chunk-kb" value="100" min="10" max="1000"><span class="ni-stat-kb-unit">KB</span></div></div>
-            <div class="ni-stat-card"><div class="ni-stat-lbl">总分段数</div><div class="ni-stat-val" id="ni-st-chunks">—</div></div>
+        <div class="ni-upload-panel">
+          <div class="ni-upload-zone" id="ni-uz">
+            <i class="ti ti-file-upload ni-uz-ico"></i>
+            <div class="ni-u-main" id="ni-u-label">点击上传 .txt 文件</div>
+            <div class="ni-u-hint" id="ni-u-hint">仅支持 .txt，将按设定大小自动分段</div>
           </div>
-          <div class="ni-chunk-list" id="ni-chunk-list"></div>
+          <div class="ni-u-ok" id="ni-u-ok"><i class="ti ti-circle-check"></i><span id="ni-u-fname"></span></div>
+          <input type="file" id="ni-fi" style="display:none" accept=".txt">
+          <div id="ni-chunk-info" style="display:none">
+            <div class="ni-stat-row">
+              <div class="ni-stat-card"><div class="ni-stat-lbl">文件大小</div><div class="ni-stat-val" id="ni-st-size">—</div></div>
+              <div class="ni-stat-card"><div class="ni-stat-lbl">分段大小</div><div class="ni-stat-val ni-stat-kb-wrap"><input type="number" class="ni-kb-inp ni-kb-inp-stat" id="ni-chunk-kb" value="100" min="10" max="1000"><span class="ni-stat-kb-unit">KB</span></div></div>
+              <div class="ni-stat-card"><div class="ni-stat-lbl">总分段数</div><div class="ni-stat-val" id="ni-st-chunks">—</div></div>
+            </div>
+            <div class="ni-chunk-list" id="ni-chunk-list"></div>
+          </div>
         </div>
       </div>
 
@@ -368,6 +370,37 @@
             </div>
           </div>
 
+          <!-- Accordion: 偏差注入 -->
+          <div class="ni-inj-acc-header" data-ni-acc="dev">
+            <div class="ni-inj-acc-left">
+              <i class="ti ti-ruler-measure"></i><span>偏差注入</span><i class="ti ti-chevron-down ni-inj-acc-chevron"></i>
+            </div>
+          </div>
+          <div class="ni-inj-panel" id="ni-inj-panel-dev">
+            <div class="ni-inj-row">
+              <div class="ni-field" style="margin-bottom:0">
+                <label>注入位置</label>
+                <select id="ni-dev-inj-pos">
+                  <option value="2" selected>主提示前</option>
+                  <option value="0">主提示后</option>
+                  <option value="1">聊天内</option>
+                </select>
+              </div>
+              <div class="ni-field" style="margin-bottom:0">
+                <label>注入深度</label>
+                <input type="number" id="ni-dev-inj-depth" value="0" min="0" max="9999">
+              </div>
+              <div class="ni-field" style="margin-bottom:0">
+                <label>消息角色</label>
+                <select id="ni-dev-inj-role">
+                  <option value="0" selected>系统</option>
+                  <option value="1">用户</option>
+                  <option value="2">助手</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           <!-- Accordion: 向量块 -->
           <div class="ni-inj-acc-header" data-ni-acc="vec">
             <div class="ni-inj-acc-left">
@@ -482,8 +515,17 @@
 
       <!-- Deviation Analysis Card -->
       <div class="ni-card">
-        <div class="ni-ctitle"><span class="ni-ctitle-label"><i class="ti ti-ruler-measure"></i>前文偏差分析</span></div>
+        <div class="ni-ctitle">
+          <span class="ni-ctitle-label"><i class="ti ti-ruler-measure"></i>前文偏差分析</span>
+          <button class="ni-icon-btn" id="ni-dev-prompt-btn" title="编辑提示词"><i class="ti ti-code"></i></button>
+        </div>
         <p class="ni-desc">对比当前对话与当前激活阶段的原著参考内容，分析主线、人物行为、地点、支线的偏差。</p>
+        <div class="ni-prompt-box" id="ni-dev-pb">
+          <div class="ni-pt-wrap">
+            <textarea id="ni-dev-pt-content" class="ni-pt-textarea" rows="7" spellcheck="false"></textarea>
+            <button class="ni-pt-reset" id="ni-dev-pt-reset" title="恢复默认提示词"><i class="ti ti-rotate"></i></button>
+          </div>
+        </div>
         <button class="ni-btn ni-btn-w" id="ni-btn-dev"><i class="ti ti-analyze"></i>分析当前偏差</button>
         <div class="ni-dev-wrap" id="ni-dev-panel" style="display:none">
           <div class="ni-dev-ttl"><i class="ti ti-report-analytics"></i>偏差分析报告</div>
@@ -492,6 +534,15 @@
           <div class="ni-dev-row"><span class="ni-dev-lbl">地点信息</span><div class="ni-dev-track"><div class="ni-dev-fill" id="ni-d2" style="width:0%"></div></div><span class="ni-dev-val" id="ni-s2">—</span></div>
           <div class="ni-dev-row"><span class="ni-dev-lbl">支线完整度</span><div class="ni-dev-track"><div class="ni-dev-fill" id="ni-d3" style="width:0%"></div></div><span class="ni-dev-val" id="ni-s3">—</span></div>
           <div class="ni-dev-note" id="ni-dev-note"></div>
+        </div>
+        <div id="ni-dev-result-wrap" style="display:none;margin-top:10px;">
+          <div id="ni-dev-result-toggle" class="ni-ctitle-toggle" style="font-size:11px;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.05em;font-weight:500;margin-bottom:6px;width:100%;" title="收起/展开">
+            <span>当前偏差</span>
+            <i class="ti ti-chevron-down" style="font-size:12px;"></i>
+          </div>
+          <div id="ni-dev-result-body" style="display:none;">
+            <textarea id="ni-dev-result" rows="8" placeholder="分析后显示在此处，可直接编辑；非空时会按“偏差注入”设置注入。"></textarea>
+          </div>
         </div>
       </div>
 
@@ -803,11 +854,19 @@
               <div class="ni-ctitle-prog-bar" id="ni-char-title-bar" style="width:0%"></div>
             </div>
           </div>
-          <div class="ni-gen-chars-wrap">
-            <button class="ni-gen-btn" id="ni-btn-gen-chars" title="调用 AI 更新角色人设（注入原著+当前对话）">
-              <i class="ti ti-sparkles"></i>AI 更新人设
-            </button>
-            <span class="ni-gen-chars-note">仅更新已启用角色</span>
+          <div class="ni-char-title-actions">
+            <div class="ni-gen-chars-wrap">
+              <button class="ni-gen-btn ni-char-auto-sleep-btn on" id="ni-char-auto-sleep-btn" title="开启阶段时，自动关闭本阶段正文未出现的非主角人设；主角和代入角色保留">
+                <i class="ti ti-moon"></i>自动休眠
+              </button>
+              <span class="ni-gen-chars-note ni-char-auto-sleep-note" id="ni-char-auto-sleep-note">关闭长期未出场角色注入</span>
+            </div>
+            <div class="ni-gen-chars-wrap">
+              <button class="ni-gen-btn" id="ni-btn-gen-chars" title="调用 AI 更新角色人设（注入原著+当前对话）">
+                <i class="ti ti-sparkles"></i>AI 更新人设
+              </button>
+              <span class="ni-gen-chars-note">仅更新已启用角色</span>
+            </div>
           </div>
         </div>
         <div class="ni-char-toolbar">

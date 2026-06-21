@@ -437,6 +437,7 @@
 #ni-prompt-btn,
 #ni-style-cfg-btn,
 #ni-style-prompt-btn,
+#ni-dev-prompt-btn,
 #ni-vec-cfg-btn,
 #ni-vec-stage-btn,
 #ni-tb-cfg-btn,
@@ -453,10 +454,12 @@
   border-radius: 4px;
   background: var(--color-background-primary);
 }
+#ni-dev-prompt-btn { margin-left: auto; }
 #ni-clean-cfg-btn:hover,
 #ni-prompt-btn:hover,
 #ni-style-cfg-btn:hover,
 #ni-style-prompt-btn:hover,
+#ni-dev-prompt-btn:hover,
 #ni-vec-cfg-btn:hover,
 #ni-vec-stage-btn:hover,
 #ni-tb-cfg-btn:hover,
@@ -716,29 +719,40 @@
 
 
 /* ---- Upload Zone ---- */
-.ni-upload-zone {
-  border: 1px dashed var(--color-border-secondary);
+.ni-upload-panel {
+  background: var(--color-background-secondary);
   border-radius: 4px;
-  padding: 20px 16px;
+  padding: 12px;
+}
+.ni-upload-zone {
+  border: 1px dashed transparent;
+  border-radius: 4px;
+  min-height: 112px;
+  padding: 18px 16px;
   text-align: center;
   cursor: pointer;
-  background: var(--color-background-secondary);
-  transition: border-color .15s;
-  margin-bottom: 8px;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: border-color .15s, background .15s;
+  margin-bottom: 0;
 }
-.ni-upload-zone:hover { border-color: var(--ni-primary-focus, #B8336A); }
-.ni-upload-zone.loaded { border-color: var(--ni-success, #1D9E75); background: var(--ni-success-soft, #E1F5EE); }
+.ni-upload-zone:hover { border-color: var(--ni-primary-focus, #B8336A); background: var(--color-background-primary); }
+.ni-upload-zone.loaded { border-color: transparent; background: transparent; }
 .ni-uz-ico { font-size: 24px; color: var(--color-text-tertiary); display: block; margin-bottom: 5px; }
 .ni-upload-zone.loaded .ni-uz-ico { color: var(--ni-success, #1D9E75); }
 .ni-u-main { font-size: 13px; color: var(--color-text-secondary); }
 .ni-upload-zone.loaded .ni-u-main { color: var(--ni-success-text, #0F6E56); font-weight: 500; }
 .ni-u-hint { font-size: 11px; color: var(--color-text-tertiary); margin-top: 3px; }
-.ni-u-ok { font-size: 12px; color: var(--ni-success-text, #0F6E56); font-weight: 500; display: none; align-items: center; gap: 5px; margin-bottom: 8px; }
+.ni-u-ok { font-size: 12px; color: var(--ni-success-text, #0F6E56); font-weight: 500; display: none; align-items: center; justify-content: center; gap: 5px; margin: 2px 0 10px; }
 .ni-u-ok i { font-size: 14px; }
 
 /* ---- Stats ---- */
-.ni-stat-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
-.ni-stat-card { background: var(--color-background-secondary); border-radius: 4px; padding: 9px 11px; }
+.ni-stat-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; border-top: .5px solid var(--color-border-tertiary); padding-top: 10px; margin-bottom: 10px; }
+.ni-stat-card { background: transparent; border-radius: 0; padding: 2px 12px 0; min-width: 0; }
+.ni-stat-card + .ni-stat-card { border-left: .5px solid var(--color-border-tertiary); }
 .ni-stat-card:nth-child(2) { text-align: center; }
 .ni-stat-card:nth-child(3) { text-align: right; }
 .ni-stat-lbl { font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 2px; }
@@ -894,6 +908,7 @@
 .ni-char-role-row { display: flex; align-items: center; gap: 6px; margin-top: 1px; }
 .ni-char-role { font-size: 12px; color: var(--color-text-secondary); }
 .ni-char-gender { font-size: 11px; color: var(--color-text-tertiary); background: var(--color-background-secondary); border: .5px solid var(--color-border-secondary); border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+.ni-char-sleep-badge { font-size: 11px; color: var(--ni-primary, #A0445E); background: var(--ni-primary-alpha-12, rgba(160, 68, 94, .12)); border: .5px solid var(--ni-primary-alpha-30, rgba(160, 68, 94, .30)); border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
 .ni-cef-field-inline { display: flex; align-items: center; gap: 8px; }
 .ni-cef-field-inline .ni-cef-label { margin-bottom: 0; white-space: nowrap; flex-shrink: 0; }
 .ni-cef-input { flex: 1; border: .5px solid var(--ni-primary-focus, #B8336A); border-radius: 4px; padding: 4px 8px; font-size: 12px; background: var(--SmartThemeChatTintColor); color: var(--SmartThemeBodyColor); font-family: inherit; outline: none; }
@@ -1420,9 +1435,20 @@
 .ni-stage-gen-btns { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-shrink: 0; }
 .ni-stage-gen-btns.ni-generating { margin-left: 0; width: 100%; }
 .ni-stage-gen-btns.ni-generating .ni-ctitle-prog { flex: 1 1 0; min-width: 0; }
-.ni-gen-chars-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; margin-left: auto; flex-shrink: 0; }
+.ni-char-title-actions { display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; margin-left: auto; flex-shrink: 0; }
+.ni-gen-chars-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
 #ni-char-card-title { align-items: flex-start; }
 .ni-gen-chars-note { font-size: 10px; color: var(--color-text-tertiary, #aaa); white-space: nowrap; }
+.ni-char-auto-sleep-btn.on {
+  background: var(--ni-primary, #A0445E);
+  border-color: var(--ni-primary, #A0445E);
+  color: var(--ni-primary-on, #fff);
+}
+.ni-char-auto-sleep-btn.on:hover {
+  background: var(--ni-primary-soft-text, #8B3A50);
+  border-color: var(--ni-primary-soft-text, #8B3A50);
+  color: #fff;
+}
 
 /* ── 流式输出原生复选框（右上角定位） ───────────────── */
 .ni-stream-check-wrap {
@@ -2471,17 +2497,21 @@ select.ni-modal-input {
 }
 #ni-style-cfg-panel.on { display: block; }
 
-#ni-style-pb {
+#ni-style-pb,
+#ni-dev-pb {
     display: none;
     margin-top: 8px;
 }
-#ni-style-pb.on { display: block; }
+#ni-style-pb.on,
+#ni-dev-pb.on { display: block; }
 
-#ni-style-result-wrap {
+#ni-style-result-wrap,
+#ni-dev-result-wrap {
     margin-top: 10px;
 }
 
-#ni-style-result {
+#ni-style-result,
+#ni-dev-result {
     width: 100%;
     padding: 8px 10px;
     font-size: 12px;
@@ -2494,7 +2524,8 @@ select.ni-modal-input {
     font-family: inherit;
 }
 
-#ni-style-result:focus {
+#ni-style-result:focus,
+#ni-dev-result:focus {
     outline: none;
     border-color: var(--ni-primary-focus, #B8336A);
 }
