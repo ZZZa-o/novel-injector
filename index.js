@@ -1500,7 +1500,7 @@ function niSyncDeviationResultUI({ collapsed = true, preserveBody = false } = {}
     const text = String(S.deviationGuide || '').trim();
     const wrap = q('#ni-dev-result-wrap');
     const body = q('#ni-dev-result-body');
-    const icon = q('#ni-dev-result-toggle i:last-child');
+    const icon = q('#ni-dev-result-toggle > i:last-child');
     const resEl = q('#ni-dev-result');
     const badge = q('#ni-dev-floor-badge');
     if (resEl && resEl.value !== (S.deviationGuide || '')) resEl.value = S.deviationGuide || '';
@@ -2585,7 +2585,7 @@ async function niReadChatCompletionStream(resp, controller, cleanup, emptyMessag
     throw new Error(emptyMessage);
 }
 
-async function niGenerateWithTavernMainPreset(messages, { responseLength = null } = {}) {
+async function niGenerateWithTavernMainPreset(messages, { responseLength = null, signal = null } = {}) {
     const tavernMessages = await niBuildTavernPresetMessages(messages);
     if (!tavernMessages.some(message => String(message.content || '').trim())) {
         throw new Error('酒馆主预设调用失败：提示词内容为空');
@@ -2611,8 +2611,12 @@ async function niGenerateWithTavernMainPreset(messages, { responseLength = null 
     const controller = new AbortController();
     S._currentAbortController = controller;
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const abortFromOuter = () => controller.abort();
+    if (signal?.aborted) controller.abort();
+    else signal?.addEventListener?.('abort', abortFromOuter, { once: true });
     const cleanup = () => {
         clearTimeout(timeoutId);
+        signal?.removeEventListener?.('abort', abortFromOuter);
         if (S._currentAbortController === controller) S._currentAbortController = null;
     };
 
@@ -5569,13 +5573,32 @@ const _vecQueue = {
 // 自动生成阶段标题和概括
 // ============================================================
 // 角色/阶段概括专用：强制串行，不受 apiConcurrency 影响
-async function callApiSeq(messages, { responseLength = 1000 } = {}) {
+async function niAcquireApiSeqSlot(signal = null) {
+    if (!signal) {
+        await _apiQueue.acquire();
+        return;
+    }
+    if (signal.aborted) throw new Error('请求已中止（超时或用户操作）');
+    let onAbort = null;
+    const abortPromise = new Promise((_, reject) => {
+        onAbort = () => reject(new Error('请求已中止（超时或用户操作）'));
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+    try {
+        await Promise.race([_apiQueue.acquire(), abortPromise]);
+    } finally {
+        if (onAbort) signal.removeEventListener('abort', onAbort);
+    }
+    if (signal.aborted) throw new Error('请求已中止（超时或用户操作）');
+}
+
+async function callApiSeq(messages, { responseLength = 1000, signal = null } = {}) {
     // 等待限速槽位（每分钟最多 N 次，0=不限）
-    await _apiQueue.acquire();
+    await niAcquireApiSeqSlot(signal);
     const cfg = extension_settings[EXT_NAME];
 
     if (niUseTavernGlobalPreset(cfg)) {
-        return await niGenerateWithTavernMainPreset(messages, { responseLength });
+        return await niGenerateWithTavernMainPreset(messages, { responseLength, signal });
     }
 
     messages = niApplyGlobalPromptsToMessages(messages, cfg);
@@ -5591,18 +5614,31 @@ async function callApiSeq(messages, { responseLength = 1000 } = {}) {
         reverse_proxy: cfg.cleanUrl,
         proxy_password: cfg.cleanKey,
     };
-    const resp = await fetch('/api/backends/chat-completions/generate', {
-        method: 'POST',
-        headers: { ...getRequestHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
+    let resp;
+    try {
+        resp = await fetch('/api/backends/chat-completions/generate', {
+            method: 'POST',
+            headers: { ...getRequestHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: signal || undefined,
+        });
+    } catch (err) {
+        if (err?.name === 'AbortError' || signal?.aborted) throw new Error('请求已中止（超时或用户操作）');
+        throw err;
+    }
     if (!resp.ok) throw new Error(`API ${resp.status}`);
 
     if (useStream) {
-        return await niReadChatCompletionStream(resp, null, () => {}, '流式响应内容为空');
+        return await niReadChatCompletionStream(resp, { signal }, () => {}, '流式响应内容为空');
     }
 
-    const json = await resp.json();
+    let json;
+    try {
+        json = await resp.json();
+    } catch (err) {
+        if (err?.name === 'AbortError' || signal?.aborted) throw new Error('请求已中止（超时或用户操作）');
+        throw err;
+    }
     if (niHasLengthFinishReason(json)) throw new Error('AI 返回被长度截断');
     const text = json?.choices?.[0]?.message?.content || json?.choices?.[0]?.text ||
                  json?.content?.[0]?.text || json?.content || json?.output || null;
@@ -5614,8 +5650,31 @@ async function callApiSeq(messages, { responseLength = 1000 } = {}) {
 // 手动触发：角色概括（串行，防重入）
 // ============================================================
 let _genCharsRunning = false;
+let _genCharsAbortController = null;
 const NI_CHAR_AI_PROFILE_RETRIES = 3;
 const NI_CHAR_AI_PROFILE_RESPONSE_LENGTH = 2000;
+
+function niIsAbortError(err) {
+    return err?.name === 'AbortError' ||
+        err?.message === 'AbortError' ||
+        String(err?.message || err || '').includes('请求已中止');
+}
+
+function niAbortableDelay(ms, signal = null) {
+    if (!signal) return new Promise(resolve => setTimeout(resolve, ms));
+    if (signal.aborted) return Promise.reject(new Error('请求已中止（超时或用户操作）'));
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        const onAbort = () => {
+            clearTimeout(timer);
+            reject(new Error('请求已中止（超时或用户操作）'));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
 
 function niBuildCharAiProfilePrompt(c, recentChat, novelCtx) {
     return `你是角色人设整理师。请为角色【${c.name}】生成当前状态的简短人设摘要。
@@ -5676,23 +5735,25 @@ function niParseCharAiProfile(raw) {
     };
 }
 
-async function niGenerateCharAiProfileWithRetry(i, charCtx, onRetry = null) {
+async function niGenerateCharAiProfileWithRetry(i, charCtx, onRetry = null, { signal = null } = {}) {
     const c = S.characters[i];
     if (!c) throw new Error('角色不存在');
 
     let lastErr = null;
     for (let attempt = 0; attempt <= NI_CHAR_AI_PROFILE_RETRIES; attempt++) {
+        if (signal?.aborted) throw new Error('请求已中止（超时或用户操作）');
         try {
             const raw = await callApiSeq([{
                 role: 'user',
                 content: niBuildCharAiProfilePrompt(c, charCtx.recentChat, charCtx.novelCtx),
-            }], { responseLength: NI_CHAR_AI_PROFILE_RESPONSE_LENGTH });
+            }], { responseLength: NI_CHAR_AI_PROFILE_RESPONSE_LENGTH, signal });
             return niParseCharAiProfile(raw);
         } catch (e) {
+            if (signal?.aborted || niIsAbortError(e)) throw e;
             lastErr = e;
             if (attempt < NI_CHAR_AI_PROFILE_RETRIES) {
                 onRetry?.(attempt + 1, e);
-                await new Promise(resolve => setTimeout(resolve, 250));
+                await niAbortableDelay(250, signal);
             }
         }
     }
@@ -5753,15 +5814,36 @@ async function niGenCharsManual(silent = false, skipIndices = null) {
         if (!silent) alert('请先完成清洗，生成角色数据后再更新人设');
         return;
     }
-    if (_genCharsRunning) return;
+    if (_genCharsRunning) {
+        if (_genCharsAbortController) {
+            _genCharsAbortController.abort();
+            const btn = q('#ni-btn-gen-chars');
+            const note = q('#ni-char-title-note');
+            if (btn) {
+                btn.innerHTML = '<i class="ti ti-loader"></i>取消中…';
+                btn.title = '正在取消 AI 人设更新';
+            }
+            if (note) note.textContent = '正在取消更新…';
+        } else if (!silent) {
+            alert('AI 人设正在更新中，请稍后再试');
+        }
+        return;
+    }
     _genCharsRunning = true;
+    const controller = new AbortController();
+    _genCharsAbortController = controller;
 
     const btn  = q('#ni-btn-gen-chars');
     const prog = q('#ni-char-title-prog');
     const bar  = q('#ni-char-title-bar');
     const note = q('#ni-char-title-note');
     const card = q('#ni-char-card-title')?.closest('.ni-card');
-    if (btn)  { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i>更新中…'; }
+    if (btn)  {
+        btn.disabled = false;
+        btn.classList.add('loading');
+        btn.innerHTML = '<i class="ti ti-player-stop"></i>取消更新';
+        btn.title = '再次点击取消 AI 人设更新';
+    }
     if (prog) prog.style.display = 'flex';
     if (card) card.classList.add('ni-has-prog');
 
@@ -5769,8 +5851,14 @@ async function niGenCharsManual(silent = false, skipIndices = null) {
     const enabledIndices = S.characters.map((c, i) => c.enabled ? i : -1).filter(i => i !== -1 && !(skipIndices && skipIndices.has(i)));
     const total = enabledIndices.length;
     const failures = [];
+    let done = 0;
+    let cancelled = false;
 
     for (let ei = 0; ei < total; ei++) {
+        if (controller.signal.aborted) {
+            cancelled = true;
+            break;
+        }
         const i = enabledIndices[ei];
         const c = S.characters[i];
         if (note) note.textContent = `角色 ${ei + 1}/${total}：${c.name}`;
@@ -5779,16 +5867,33 @@ async function niGenCharsManual(silent = false, skipIndices = null) {
             const profile = await niGenerateCharAiProfileWithRetry(i, charCtx, (retryNo, err) => {
                 if (note) note.textContent = `角色 ${ei + 1}/${total}：${c.name}（重试 ${retryNo}/${NI_CHAR_AI_PROFILE_RETRIES}）`;
                 console.warn(`[NI] 角色 ${c.name} 人设第 ${retryNo} 次重试：`, err);
-            });
+            }, { signal: controller.signal });
+            if (controller.signal.aborted) {
+                cancelled = true;
+                break;
+            }
             niApplyCharAiProfile(i, profile);
+            done++;
         } catch (e) {
+            if (controller.signal.aborted || niIsAbortError(e)) {
+                cancelled = true;
+                break;
+            }
             console.warn(`[NI] 角色 ${c.name} 人设更新失败:`, e);
             failures.push(`${c.name}：${e.message || e}`);
         }
     }
 
-    if (bar)  { bar.style.width = '100%'; bar.classList.add('g'); }
-    if (note) { note.textContent = failures.length ? `${failures.length} 位角色更新失败` : `全部 ${total} 位角色已更新`; note.classList.add(failures.length ? 'bad' : 'g'); }
+    if (bar)  {
+        bar.style.width = cancelled && total ? `${Math.round((done / total) * 100)}%` : '100%';
+        if (!cancelled) bar.classList.add('g');
+    }
+    if (note) {
+        note.textContent = cancelled
+            ? `已取消，已更新 ${done}/${total} 位角色`
+            : (failures.length ? `${failures.length} 位角色更新失败` : `全部 ${total} 位角色已更新`);
+        note.classList.add(cancelled || failures.length ? 'bad' : 'g');
+    }
     setTimeout(() => {
         if (prog) prog.style.display = 'none';
         if (bar)  { bar.style.width = '0%'; bar.classList.remove('g'); }
@@ -5797,10 +5902,16 @@ async function niGenCharsManual(silent = false, skipIndices = null) {
     }, 2500);
 
     niSaveSettings();
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-sparkles"></i>AI 更新人设'; }
+    if (btn) {
+        btn.disabled = false;
+        btn.classList.remove('loading');
+        btn.innerHTML = '<i class="ti ti-sparkles"></i>AI 更新人设';
+        btn.title = '调用 AI 更新角色人设（注入原著+当前对话）';
+    }
+    if (_genCharsAbortController === controller) _genCharsAbortController = null;
     _genCharsRunning = false;
 
-    if (failures.length && !silent) {
+    if (failures.length && !silent && !cancelled) {
         alert(`AI 实时人设更新失败：\n${failures.slice(0, 5).join('\n')}${failures.length > 5 ? `\n……另有 ${failures.length - 5} 位失败` : ''}`);
     }
 }
@@ -9234,7 +9345,7 @@ jQuery(async () => {
     $app.on('click', '#ni-dev-result-toggle', (e) => {
         if (e.target?.closest?.('#ni-dev-retry-btn')) return;
         const body = q('#ni-dev-result-body');
-        const btn  = q('#ni-dev-result-toggle i:last-child');
+        const btn  = q('#ni-dev-result-toggle > i:last-child');
         if (!body) return;
         const isOpen = body.style.display !== 'none';
         body.style.display = isOpen ? 'none' : 'block';
