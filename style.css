@@ -359,6 +359,7 @@
 .ni-btn-p:hover:not(:disabled) { background: var(--ni-primary-soft-text, #8B3A50); }
 .ni-btn-w { color: var(--ni-success-text, #2E7D5E); border-color: var(--ni-success-border, #6BBF9E); }
 .ni-btn-w:hover:not(:disabled) { background: var(--ni-success-soft, #E8F5EF); }
+#ni-btn-dev.loading .ti-analyze { display: none !important; }
 .ni-btn-ghost { color: var(--color-text-secondary); }
 .ni-btn-ghost:hover:not(:disabled) { background: var(--color-background-secondary); }
 /* ---- 清洗控制行（跳过 / 暂停 / 超时） ---- */

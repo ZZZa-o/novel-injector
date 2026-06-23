@@ -6700,8 +6700,11 @@ function niSetDevButtonState({ running = false } = {}) {
     const btn = q('#ni-btn-dev');
     if (!btn) return;
     btn.disabled = !!running;
+    btn.classList.toggle('loading', !!running);
+    btn.setAttribute('aria-busy', running ? 'true' : 'false');
     const icon = document.createElement('i');
-    icon.className = running ? 'ti ti-loader-2 ni-spin-icon' : 'ti ti-analyze';
+    icon.className = running ? 'ti ti-loader' : 'ti ti-analyze';
+    icon.setAttribute('aria-hidden', 'true');
     btn.replaceChildren(icon, document.createTextNode(running ? '分析中…' : niDevButtonLabel()));
 }
 
