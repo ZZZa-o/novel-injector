@@ -1,5 +1,13 @@
 @import url("https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css");
 
+@font-face {
+  font-family: "NI-AliIcon";
+  src: url("https://at.alicdn.com/t/font_148784_v4ggb6wrjmkotj4i.woff?t=1518338917119") format("woff");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ============================================
    Novel Injector - Style
    All selectors prefixed with .ni- to avoid conflicts
@@ -59,6 +67,194 @@
   -webkit-backdrop-filter: none !important;
   filter: none !important;
 }
+
+.ni-app.ni-ali-icons .ti,
+.ni-ali-icons #ni-storybar .ti {
+  font-family: "NI-AliIcon" !important;
+  font-style: normal;
+  font-weight: normal;
+  line-height: 1;
+  text-transform: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.ni-app.ni-ali-icons .ti::before,
+.ni-ali-icons #ni-storybar .ti::before {
+  display: inline-block;
+}
+
+/* 阿里 iconfont 替换：按插件标题/按钮语义映射常用 Tabler 图标。 */
+.ni-app.ni-ali-icons .ti-check::before,
+.ni-ali-icons #ni-storybar .ti-check::before { content: "\e632"; }
+.ni-app.ni-ali-icons .ti-x::before,
+.ni-ali-icons #ni-storybar .ti-x::before { content: "\e633"; }
+.ni-app.ni-ali-icons .ti-plus::before,
+.ni-ali-icons #ni-storybar .ti-plus::before { content: "\e627"; }
+.ni-app.ni-ali-icons .ti-minus::before,
+.ni-ali-icons #ni-storybar .ti-minus::before { content: "\e624"; }
+.ni-app.ni-ali-icons .ti-chevron-down::before,
+.ni-ali-icons #ni-storybar .ti-chevron-down::before { content: "\e61d"; }
+.ni-app.ni-ali-icons .ti-chevron-up::before,
+.ni-ali-icons #ni-storybar .ti-chevron-up::before { content: "\e61e"; }
+.ni-app.ni-ali-icons .ti-chevron-right::before,
+.ni-ali-icons #ni-storybar .ti-chevron-right::before { content: "\e61f"; }
+.ni-app.ni-ali-icons .ti-refresh::before,
+.ni-app.ni-ali-icons .ti-rotate::before,
+.ni-ali-icons #ni-storybar .ti-refresh::before,
+.ni-ali-icons #ni-storybar .ti-rotate::before { content: "\e613"; }
+.ni-app.ni-ali-icons .ti-loader::before,
+.ni-app.ni-ali-icons .ti-loader-2::before,
+.ni-ali-icons #ni-storybar .ti-loader::before,
+.ni-ali-icons #ni-storybar .ti-loader-2::before { content: "\e6ae"; }
+.ni-app.ni-ali-icons .ti-sparkles::before,
+.ni-ali-icons #ni-storybar .ti-sparkles::before { content: "\e660"; }
+.ni-app.ni-ali-icons .ti-settings::before,
+.ni-app.ni-ali-icons .ti-settings-2::before,
+.ni-app.ni-ali-icons .ti-adjustments::before,
+.ni-ali-icons #ni-storybar .ti-settings::before,
+.ni-ali-icons #ni-storybar .ti-settings-2::before,
+.ni-ali-icons #ni-storybar .ti-adjustments::before { content: "\e672"; }
+.ni-app.ni-ali-icons .ti-code::before,
+.ni-ali-icons #ni-storybar .ti-code::before { content: "\e6bf"; }
+.ni-app.ni-ali-icons .ti-file-text::before,
+.ni-app.ni-ali-icons .ti-file-diff::before,
+.ni-ali-icons #ni-storybar .ti-file-text::before,
+.ni-ali-icons #ni-storybar .ti-file-diff::before { content: "\e698"; }
+.ni-app.ni-ali-icons .ti-file-upload::before,
+.ni-app.ni-ali-icons .ti-upload::before,
+.ni-ali-icons #ni-storybar .ti-file-upload::before,
+.ni-ali-icons #ni-storybar .ti-upload::before { content: "\e6b6"; }
+.ni-app.ni-ali-icons .ti-download::before,
+.ni-ali-icons #ni-storybar .ti-download::before { content: "\e6b7"; }
+.ni-app.ni-ali-icons .ti-file-import::before,
+.ni-ali-icons #ni-storybar .ti-file-import::before { content: "\e6b6"; }
+.ni-app.ni-ali-icons .ti-file-export::before,
+.ni-ali-icons #ni-storybar .ti-file-export::before { content: "\e690"; }
+.ni-app.ni-ali-icons .ti-device-floppy::before,
+.ni-ali-icons #ni-storybar .ti-device-floppy::before { content: "\e669"; }
+.ni-app.ni-ali-icons .ti-trash::before,
+.ni-ali-icons #ni-storybar .ti-trash::before { content: "\e69f"; }
+.ni-app.ni-ali-icons .ti-pencil::before,
+.ni-app.ni-ali-icons .ti-writing::before,
+.ni-ali-icons #ni-storybar .ti-pencil::before,
+.ni-ali-icons #ni-storybar .ti-writing::before { content: "\e692"; }
+.ni-app.ni-ali-icons .ti-scissors::before,
+.ni-app.ni-ali-icons .ti-puzzle::before,
+.ni-ali-icons #ni-storybar .ti-scissors::before,
+.ni-ali-icons #ni-storybar .ti-puzzle::before { content: "\e6d9"; }
+.ni-app.ni-ali-icons .ti-vector::before,
+.ni-app.ni-ali-icons .ti-vector-off::before,
+.ni-app.ni-ali-icons .ti-database::before,
+.ni-app.ni-ali-icons .ti-database-off::before,
+.ni-ali-icons #ni-storybar .ti-vector::before,
+.ni-ali-icons #ni-storybar .ti-vector-off::before,
+.ni-ali-icons #ni-storybar .ti-database::before,
+.ni-ali-icons #ni-storybar .ti-database-off::before { content: "\e650"; }
+.ni-app.ni-ali-icons .ti-layout-list::before,
+.ni-app.ni-ali-icons .ti-list-details::before,
+.ni-app.ni-ali-icons .ti-list-check::before,
+.ni-app.ni-ali-icons .ti-sitemap::before,
+.ni-ali-icons #ni-storybar .ti-layout-list::before,
+.ni-ali-icons #ni-storybar .ti-list-details::before,
+.ni-ali-icons #ni-storybar .ti-list-check::before,
+.ni-ali-icons #ni-storybar .ti-sitemap::before { content: "\e656"; }
+.ni-app.ni-ali-icons .ti-timeline::before,
+.ni-app.ni-ali-icons .ti-chart-line::before,
+.ni-app.ni-ali-icons .ti-analyze::before,
+.ni-app.ni-ali-icons .ti-ruler-measure::before,
+.ni-ali-icons #ni-storybar .ti-timeline::before,
+.ni-ali-icons #ni-storybar .ti-chart-line::before,
+.ni-ali-icons #ni-storybar .ti-analyze::before,
+.ni-ali-icons #ni-storybar .ti-ruler-measure::before { content: "\e65d"; }
+.ni-app.ni-ali-icons .ti-book::before,
+.ni-app.ni-ali-icons .ti-book-2::before,
+.ni-app.ni-ali-icons .ti-books::before,
+.ni-app.ni-ali-icons .ti-book-off::before,
+.ni-ali-icons #ni-storybar .ti-book::before,
+.ni-ali-icons #ni-storybar .ti-book-2::before,
+.ni-ali-icons #ni-storybar .ti-books::before,
+.ni-ali-icons #ni-storybar .ti-book-off::before { content: "\e637"; }
+.ni-app.ni-ali-icons .ti-world::before,
+.ni-app.ni-ali-icons .ti-map-pin::before,
+.ni-ali-icons #ni-storybar .ti-world::before,
+.ni-ali-icons #ni-storybar .ti-map-pin::before { content: "\e685"; }
+.ni-app.ni-ali-icons .ti-users::before,
+.ni-ali-icons #ni-storybar .ti-users::before { content: "\e66d"; }
+.ni-app.ni-ali-icons .ti-user::before,
+.ni-app.ni-ali-icons .ti-user-scan::before,
+.ni-app.ni-ali-icons .ti-id-badge::before,
+.ni-app.ni-ali-icons .ti-gender-bigender::before,
+.ni-ali-icons #ni-storybar .ti-user::before,
+.ni-ali-icons #ni-storybar .ti-user-scan::before,
+.ni-ali-icons #ni-storybar .ti-id-badge::before,
+.ni-ali-icons #ni-storybar .ti-gender-bigender::before { content: "\e66a"; }
+.ni-app.ni-ali-icons .ti-eye::before,
+.ni-ali-icons #ni-storybar .ti-eye::before { content: "\e687"; }
+.ni-app.ni-ali-icons .ti-eye-off::before,
+.ni-ali-icons #ni-storybar .ti-eye-off::before { content: "\e688"; }
+.ni-app.ni-ali-icons .ti-tag::before,
+.ni-ali-icons #ni-storybar .ti-tag::before { content: "\e6d2"; }
+.ni-app.ni-ali-icons .ti-bookmark::before,
+.ni-app.ni-ali-icons .ti-pin::before,
+.ni-ali-icons #ni-storybar .ti-bookmark::before,
+.ni-ali-icons #ni-storybar .ti-pin::before { content: "\e6a2"; }
+.ni-app.ni-ali-icons .ti-link::before,
+.ni-ali-icons #ni-storybar .ti-link::before { content: "\e65b"; }
+.ni-app.ni-ali-icons .ti-info-circle::before,
+.ni-ali-icons #ni-storybar .ti-info-circle::before { content: "\e628"; }
+.ni-app.ni-ali-icons .ti-alert-circle::before,
+.ni-app.ni-ali-icons .ti-alert-triangle::before,
+.ni-ali-icons #ni-storybar .ti-alert-circle::before,
+.ni-ali-icons #ni-storybar .ti-alert-triangle::before { content: "\e62c"; }
+.ni-app.ni-ali-icons .ti-circle-check::before,
+.ni-ali-icons #ni-storybar .ti-circle-check::before { content: "\e630"; }
+.ni-app.ni-ali-icons .ti-circle-off::before,
+.ni-ali-icons #ni-storybar .ti-circle-off::before { content: "\e62f"; }
+.ni-app.ni-ali-icons .ti-circle-dot::before,
+.ni-ali-icons #ni-storybar .ti-circle-dot::before { content: "\e608"; }
+.ni-app.ni-ali-icons .ti-player-play::before,
+.ni-ali-icons #ni-storybar .ti-player-play::before { content: "\e6d0"; }
+.ni-app.ni-ali-icons .ti-player-pause::before,
+.ni-ali-icons #ni-storybar .ti-player-pause::before { content: "\e63d"; }
+.ni-app.ni-ali-icons .ti-player-skip-forward::before,
+.ni-ali-icons #ni-storybar .ti-player-skip-forward::before { content: "\e600"; }
+.ni-app.ni-ali-icons .ti-player-stop::before,
+.ni-ali-icons #ni-storybar .ti-player-stop::before { content: "\e62e"; }
+.ni-app.ni-ali-icons .ti-flag-2::before,
+.ni-ali-icons #ni-storybar .ti-flag-2::before { content: "\e655"; }
+.ni-app.ni-ali-icons .ti-filter::before,
+.ni-ali-icons #ni-storybar .ti-filter::before { content: "\e663"; }
+.ni-app.ni-ali-icons .ti-palette::before,
+.ni-ali-icons #ni-storybar .ti-palette::before { content: "\e6d8"; }
+.ni-app.ni-ali-icons .ti-transfer::before,
+.ni-ali-icons #ni-storybar .ti-transfer::before { content: "\e642"; }
+.ni-app.ni-ali-icons .ti-clock::before,
+.ni-app.ni-ali-icons .ti-clock-bolt::before,
+.ni-app.ni-ali-icons .ti-traffic-lights::before,
+.ni-ali-icons #ni-storybar .ti-clock::before,
+.ni-ali-icons #ni-storybar .ti-clock-bolt::before,
+.ni-ali-icons #ni-storybar .ti-traffic-lights::before { content: "\e640"; }
+.ni-app.ni-ali-icons .ti-arrow-back-up::before,
+.ni-ali-icons #ni-storybar .ti-arrow-back-up::before { content: "\e620"; }
+.ni-app.ni-ali-icons .ti-arrow-bar-to-up::before,
+.ni-ali-icons #ni-storybar .ti-arrow-bar-to-up::before { content: "\e61a"; }
+.ni-app.ni-ali-icons .ti-arrow-bar-to-down::before,
+.ni-ali-icons #ni-storybar .ti-arrow-bar-to-down::before { content: "\e619"; }
+.ni-app.ni-ali-icons .ti-git-branch::before,
+.ni-ali-icons #ni-storybar .ti-git-branch::before { content: "\e671"; }
+.ni-app.ni-ali-icons .ti-moon::before,
+.ni-ali-icons #ni-storybar .ti-moon::before { content: "\e640"; }
+.ni-app.ni-ali-icons .ti-power::before,
+.ni-ali-icons #ni-storybar .ti-power::before { content: "\e913"; }
+.ni-app.ni-ali-icons .ti-tool::before,
+.ni-app.ni-ali-icons .ti-cpu::before,
+.ni-ali-icons #ni-storybar .ti-tool::before,
+.ni-ali-icons #ni-storybar .ti-cpu::before { content: "\e6d9"; }
+.ni-app.ni-ali-icons .ti-grip-vertical::before,
+.ni-ali-icons #ni-storybar .ti-grip-vertical::before { content: "\e647"; }
+.ni-app.ni-ali-icons .ti-ghost::before,
+.ni-ali-icons #ni-storybar .ti-ghost::before { content: "\e646"; }
 
 .ni-scroll {
   flex: 1;
@@ -244,7 +440,8 @@
 #ni-theme-surface-switch-row,
 #ni-theme-borderless-row,
 #ni-theme-cardless-row,
-#ni-theme-statusbar-follow-row {
+#ni-theme-statusbar-follow-row,
+#ni-theme-icon-replace-row {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
@@ -257,20 +454,23 @@
 #ni-theme-surface-switch-row .ni-switch-wrap,
 #ni-theme-borderless-row .ni-switch-wrap,
 #ni-theme-cardless-row .ni-switch-wrap,
-#ni-theme-statusbar-follow-row .ni-switch-wrap {
+#ni-theme-statusbar-follow-row .ni-switch-wrap,
+#ni-theme-icon-replace-row .ni-switch-wrap {
   gap: 0;
 }
 #ni-theme-surface-switch-row .ni-switch-label,
 #ni-theme-borderless-row .ni-switch-label,
 #ni-theme-cardless-row .ni-switch-label,
-#ni-theme-statusbar-follow-row .ni-switch-label {
+#ni-theme-statusbar-follow-row .ni-switch-label,
+#ni-theme-icon-replace-row .ni-switch-label {
   font-size: 12px;
   color: var(--color-text-secondary);
 }
 #ni-theme-surface-switch-row .ni-switch-txt,
 #ni-theme-borderless-row .ni-switch-txt,
 #ni-theme-cardless-row .ni-switch-txt,
-#ni-theme-statusbar-follow-row .ni-switch-txt {
+#ni-theme-statusbar-follow-row .ni-switch-txt,
+#ni-theme-icon-replace-row .ni-switch-txt {
   font-size: 12px;
 }
 .ni-theme-color-wrap {
@@ -461,7 +661,8 @@
 #ni-tb-prompt-btn,
 #ni-global-prompt-btn,
 #ni-stage-prompt-btn,
-#ni-user-sub-cfg-btn {
+#ni-user-sub-cfg-btn,
+#ni-user-sub-prompt-btn {
   width: 26px;
   height: 26px;
   min-width: 26px;
@@ -483,7 +684,8 @@
 #ni-tb-prompt-btn:hover,
 #ni-global-prompt-btn:hover,
 #ni-stage-prompt-btn:hover,
-#ni-user-sub-cfg-btn:hover {
+#ni-user-sub-cfg-btn:hover,
+#ni-user-sub-prompt-btn:hover {
   background: var(--color-background-secondary);
 }
 #ni-dev-cfg-btn { margin-left: auto; }
@@ -1760,6 +1962,65 @@ select.ni-modal-input {
   margin-bottom: 0;
   padding: 8px;
 }
+#ni-user-sub-pb {
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+.ni-user-sub-prompt-wrap {
+  flex-direction: column;
+  gap: 8px;
+}
+.ni-user-sub-prompt-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+.ni-user-sub-prompt-note i {
+  flex: none;
+  margin-top: 2px;
+  font-size: 12px;
+}
+.ni-user-sub-prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.ni-user-sub-prompt-head label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.ni-user-sub-prompt-head label i {
+  font-size: 11px;
+}
+#ni-user-sub-prompt-state {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+#ni-user-sub-prompt-preview {
+  min-height: 118px;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  resize: vertical;
+}
+#ni-user-sub-prompt-preview[readonly] {
+  cursor: default;
+}
 .ni-user-sub-grid {
   display: grid;
   grid-template-columns: 70px minmax(0, 1fr);
@@ -1771,6 +2032,48 @@ select.ni-modal-input {
   margin: 0;
   font-size: 12px;
   line-height: 26px;
+}
+.ni-user-sub-mode-grid {
+  align-items: stretch;
+}
+.ni-user-sub-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  min-height: 26px;
+  padding: 2px;
+  border: .5px solid var(--ni-primary-alpha-20, rgba(160, 68, 94, .2));
+  border-radius: 6px;
+  background: var(--color-background-primary);
+  box-sizing: border-box;
+}
+.ni-user-sub-mode-btn {
+  min-width: 0;
+  height: 22px;
+  min-height: 22px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.ni-user-sub-mode-btn:hover {
+  color: var(--ni-primary, #A0445E);
+  background: var(--ni-primary-alpha-08, rgba(160, 68, 94, .08));
+}
+.ni-user-sub-mode-btn.on,
+.ni-user-sub-mode-btn[aria-pressed="true"] {
+  background: var(--ni-primary, #A0445E);
+  color: var(--ni-checkbox-on, #fff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
 }
 .ni-user-sub-list {
   display: flex;
@@ -2754,6 +3057,17 @@ select.ni-modal-input {
     min-width: 0;
 }
 
+.ni-dev-result-heading {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+.ni-dev-result-heading i {
+    font-size: 13px;
+    color: var(--ni-primary, #A0445E);
+}
+
 .ni-dev-floor-badge {
     display: inline-flex;
     align-items: center;
@@ -2796,8 +3110,7 @@ select.ni-modal-input {
     font-size: 13px;
 }
 
-#ni-style-result,
-#ni-dev-result {
+#ni-style-result {
     width: 100%;
     padding: 8px 10px;
     font-size: 12px;
@@ -2810,10 +3123,50 @@ select.ni-modal-input {
     font-family: inherit;
 }
 
-#ni-style-result:focus,
-#ni-dev-result:focus {
+#ni-style-result:focus {
     outline: none;
     border-color: var(--ni-primary-focus, #B8336A);
+}
+
+.ni-dev-section-textarea {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.6;
+    border: .5px solid var(--color-border-secondary);
+    border-radius: 6px;
+    background: var(--color-background-secondary);
+    color: var(--color-text-primary);
+    resize: vertical;
+    font-family: inherit;
+}
+.ni-dev-section-textarea:focus {
+    outline: none;
+    border-color: var(--ni-primary-focus, #B8336A);
+}
+
+.ni-dev-section-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.ni-dev-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.ni-dev-section-title {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+}
+.ni-dev-section-title i {
+    font-size: 13px;
+    color: var(--ni-primary, #A0445E);
 }
 
 #ni-style-result-label {

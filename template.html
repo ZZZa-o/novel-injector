@@ -550,22 +550,27 @@
           </div>
         </div>
         <button class="ni-btn ni-btn-w" id="ni-btn-dev"><i class="ti ti-analyze"></i>分析当前偏差</button>
-        <div class="ni-dev-wrap" id="ni-dev-panel" style="display:none">
-          <div class="ni-dev-ttl"><i class="ti ti-report-analytics"></i>偏差分析报告</div>
-          <div class="ni-dev-row"><span class="ni-dev-lbl">主线剧情</span><div class="ni-dev-track"><div class="ni-dev-fill" id="ni-d0" style="width:0%"></div></div><span class="ni-dev-val" id="ni-s0">—</span></div>
-          <div class="ni-dev-row"><span class="ni-dev-lbl">人物行为</span><div class="ni-dev-track"><div class="ni-dev-fill" id="ni-d1" style="width:0%"></div></div><span class="ni-dev-val" id="ni-s1">—</span></div>
-          <div class="ni-dev-row"><span class="ni-dev-lbl">地点信息</span><div class="ni-dev-track"><div class="ni-dev-fill" id="ni-d2" style="width:0%"></div></div><span class="ni-dev-val" id="ni-s2">—</span></div>
-          <div class="ni-dev-row"><span class="ni-dev-lbl">支线完整度</span><div class="ni-dev-track"><div class="ni-dev-fill" id="ni-d3" style="width:0%"></div></div><span class="ni-dev-val" id="ni-s3">—</span></div>
-          <div class="ni-dev-note" id="ni-dev-note"></div>
-        </div>
         <div id="ni-dev-result-wrap" style="display:none;margin-top:10px;">
           <div id="ni-dev-result-toggle" class="ni-ctitle-toggle" style="font-size:11px;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.05em;font-weight:500;margin-bottom:6px;width:100%;" title="收起/展开">
-            <span class="ni-dev-result-title"><span>当前偏差</span><span id="ni-dev-floor-badge" class="ni-dev-floor-badge">已总结 0 楼</span></span>
+            <span class="ni-dev-result-title"><span class="ni-dev-result-heading"><i class="ti ti-file-diff"></i><span>当前偏差</span></span><span id="ni-dev-floor-badge" class="ni-dev-floor-badge">已总结 0 层</span></span>
             <button type="button" class="ni-dev-retry-btn" id="ni-dev-retry-btn" title="暂无可重试范围" aria-label="暂无可重试范围"><i class="ti ti-refresh"></i></button>
             <i class="ti ti-chevron-down" style="font-size:12px;"></i>
           </div>
           <div id="ni-dev-result-body" style="display:none;">
-            <textarea id="ni-dev-result" rows="8" placeholder="分析后显示在此处，可直接编辑；非空时会按“偏差注入”设置注入。"></textarea>
+            <div class="ni-dev-section-list">
+              <div class="ni-dev-section">
+                <label class="ni-dev-section-title" for="ni-dev-changed-facts"><i class="ti ti-git-branch"></i>已改变事实</label>
+                <textarea id="ni-dev-changed-facts" class="ni-dev-section-textarea" rows="5" spellcheck="false" placeholder="输入已改变事实…"></textarea>
+              </div>
+              <div class="ni-dev-section">
+                <label class="ni-dev-section-title" for="ni-dev-current-constraint"><i class="ti ti-adjustments"></i>当前偏差约束</label>
+                <textarea id="ni-dev-current-constraint" class="ni-dev-section-textarea" rows="5" spellcheck="false" placeholder="输入当前偏差约束…"></textarea>
+              </div>
+              <div class="ni-dev-section">
+                <label class="ni-dev-section-title" for="ni-dev-preserved-facts"><i class="ti ti-book"></i>仍保留的原著事实</label>
+                <textarea id="ni-dev-preserved-facts" class="ni-dev-section-textarea" rows="5" spellcheck="false" placeholder="输入仍保留的原著事实…"></textarea>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -854,6 +859,7 @@
               </span>
             </label>
             <button class="ni-icon-btn" id="ni-user-sub-cfg-btn" title="用户代入设置"><i class="ti ti-settings"></i></button>
+            <button class="ni-icon-btn" id="ni-user-sub-prompt-btn" title="查看用户代入提示词"><i class="ti ti-code"></i></button>
           </div>
           <div class="ni-user-sub-note"><i class="ti ti-info-circle"></i><span>将选中角色及勾选称呼在注入时替换为 &lt;user&gt;，原文与向量数据不变。</span></div>
           <div class="ni-api-panel" id="ni-user-sub-panel">
@@ -861,10 +867,32 @@
               <label class="ni-cef-label">代入角色</label>
               <select class="ni-cef-input ni-cef-select" id="ni-user-sub-char"></select>
             </div>
+            <div class="ni-user-sub-grid ni-user-sub-mode-grid">
+              <label class="ni-cef-label">代入方式</label>
+              <div class="ni-user-sub-mode" id="ni-user-sub-mode" role="radiogroup" aria-label="代入方式">
+                <button type="button" class="ni-user-sub-mode-btn" data-user-sub-mode="replace" aria-pressed="true">替换原角人生</button>
+                <button type="button" class="ni-user-sub-mode-btn" data-user-sub-mode="play" aria-pressed="false">扮演原角本人</button>
+              </div>
+            </div>
             <div class="ni-user-sub-list" id="ni-user-sub-list"></div>
             <div class="ni-user-sub-actions">
               <button class="ni-char-edit-btn" id="ni-user-sub-add"><i class="ti ti-plus"></i>添加称呼</button>
               <button class="ni-char-edit-btn" id="ni-user-sub-reset"><i class="ti ti-refresh"></i>重置本聊天勾选</button>
+            </div>
+          </div>
+          <div class="ni-prompt-box" id="ni-user-sub-pb">
+            <div class="ni-pt-wrap ni-user-sub-prompt-wrap">
+              <div class="ni-user-sub-prompt-note">
+                <i class="ti ti-info-circle"></i>
+                <span>开启“用户代入角色”、选择角色且至少保留一个有效称呼时，此提示词会在每次请求前作为隐藏系统提示注入；切换代入方式、角色或称呼后会自动更新。关闭时不发送代入提示词，但会发送“关于用户角色”的边界提示词。</span>
+              </div>
+              <div>
+                <div class="ni-user-sub-prompt-head">
+                  <label><i class="ti ti-code"></i> 当前生效提示词</label>
+                  <span id="ni-user-sub-prompt-state">未开启</span>
+                </div>
+                <textarea id="ni-user-sub-prompt-preview" class="ni-pt-textarea" rows="6" spellcheck="false" readonly></textarea>
+              </div>
             </div>
           </div>
         </div>
@@ -1131,6 +1159,14 @@
               <span class="ni-switch-txt" id="ni-theme-statusbar-follow-state" style="display:inline-block;font-size:11px;font-weight:700;transition:color .2s;color:var(--ni-primary,#A0445E)">关</span>
             </span>
           </label>
+          <label class="ni-switch-row" id="ni-theme-icon-replace-row" title="使用阿里 iconfont 替换插件图标">
+            <span class="ni-switch-label">图标替换</span>
+            <span class="ni-switch-wrap">
+              <input type="checkbox" id="ni-theme-icon-replace" style="position:absolute;opacity:0;width:0;height:0">
+              <span class="ni-switch-track"><span class="ni-switch-knob"></span></span>
+              <span class="ni-switch-txt" id="ni-theme-icon-replace-state" style="display:inline-block;font-size:11px;font-weight:700;transition:color .2s;color:var(--ni-primary,#A0445E)">关</span>
+            </span>
+          </label>
           <div class="ni-theme-custom-row">
             <label for="ni-theme-background">背景</label>
             <div class="ni-theme-color-wrap">
@@ -1253,7 +1289,7 @@
 
   <!-- Bottom Nav -->
   <div class="ni-btm-nav">
-    <button class="ni-nav-btn on" data-page="process"><i class="ti ti-cpu"></i>处理</button>
+    <button class="ni-nav-btn on" data-page="process"><i class="ti ti-tool"></i>处理</button>
     <button class="ni-nav-btn" data-page="plot"><i class="ti ti-sitemap"></i>剧情</button>
     <button class="ni-nav-btn" data-page="char"><i class="ti ti-users"></i>角色</button>
     <button class="ni-nav-btn" data-page="stage"><i class="ti ti-layout-list"></i>阶段</button>

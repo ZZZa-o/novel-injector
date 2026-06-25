@@ -294,6 +294,12 @@ const GLOBAL_TAIL_PROMPT = '';
 
 // 演绎提示词（阶段界面注入到角色备注）
 // ============================================================
+const ROLEPLAY_PROMPT_LEGACY_USER_ROLE_LINE = '7.绝对禁止擅自让 <user> 说出原作人物台词、执行原作人物行动、作出原作人物选择。除非 <user> 主动输入，否则不得自动继承原角色行为逻辑。';
+const ROLEPLAY_PROMPT_LEGACY_USER_EVENT_RULE = '6.原著事件只能作为可能发生的历史惯性。\n若事件的发生需要<user>参与、同意、配合或执行某项行为，则在<user>明确作出对应输入前，该事件不得自动发生。';
+const ROLEPLAY_PROMPT_EVENT_HISTORY_LINE = '6. 原著事件只能作为可能发生的历史惯性，不能被当作必须执行的固定流程。';
+const ROLEPLAY_PROMPT_USER_ROLE_LINES_TO_REMOVE = [
+    ROLEPLAY_PROMPT_LEGACY_USER_ROLE_LINE,
+];
 const ROLEPLAY_PROMPT = `# 【剧情演绎核心指令】
 
 ## 零、注入内容定性
@@ -324,8 +330,7 @@ const ROLEPLAY_PROMPT = `# 【剧情演绎核心指令】
 3. 用户改变原著走向，不代表剧情必须滑向惩罚、灾难、背叛、黑暗化、恶意升级或强行冲突。
 4. 局部变化只影响与其直接相关的人物、场景和事件链，不得无故扩大为全局崩坏、全面敌意、重大灾难或不可逆悲剧。
 5. 若注入资料与当前对话出现矛盾，不得出戏解释；应在剧情内自然处理为信息差、传闻偏差、角色误解、认知不全或局势变化。
-6.原著事件只能作为可能发生的历史惯性。
-若事件的发生需要<user>参与、同意、配合或执行某项行为，则在<user>明确作出对应输入前，该事件不得自动发生。
+${ROLEPLAY_PROMPT_EVENT_HISTORY_LINE}
 
 ---
 
@@ -337,7 +342,6 @@ const ROLEPLAY_PROMPT = `# 【剧情演绎核心指令】
 4. 角色关系的亲近、疏远、信任、警惕、愧疚、欣赏等变化，必须来自当前对话中的具体事实。
 5. 如果角色在当前新局势下的反应与原著一致，必须确认这是角色内核导致的自然反应，而不是照搬原著剧情。
 6.需要给用户留下修改原文故事线的余地。
-7.绝对禁止擅自让 <user> 说出原作人物台词、执行原作人物行动、作出原作人物选择。除非 <user> 主动输入，否则不得自动继承原角色行为逻辑。
 
 ---
 
@@ -403,8 +407,8 @@ const DEV_PROMPT = `你是小说剧情偏差分析与分支现实整理师。
 
 你的任务不是强行把当前剧情拉回原著，而是维护一份可注入给后续写作模型的“新现实约束”。
 如果已有偏差档案为空，本次是首次分析：判断当前正文是否已经形成会改变后续走向的关键偏差。
-如果已有偏差档案非空，本次是更新偏差档案：旧偏差只作为上下文，不能重写、压缩、删除或替换它；请只分析当前正文范围中新成立、被修正或产生连锁影响的偏差增补。
-最终输出必须是本次范围的偏差增补 JSON，不要输出整份旧偏差档案；插件会把本次结果追加到文本框现有内容中。
+如果已有偏差档案非空，本次是更新偏差档案：旧偏差只作为上下文，已改变事实只输出本次新增或修正后需要追加的锚点；当前偏差约束和仍保留的原著事实必须输出更新后的完整内容。
+最终输出必须是本次范围的 JSON，不要输出 Markdown 或结构外文字。
 
 请严格按 JSON 输出，不要输出 Markdown、代码块或结构外文字：
 {
@@ -429,7 +433,7 @@ const DEV_PROMPT = `你是小说剧情偏差分析与分支现实整理师。
   "preserved_facts": [
     "仍应继续遵守的原著事实，避免把所有内容都推翻"
   ],
-  "deviation_injection_prompt": "可直接注入后续写作模型的提示词，不超过500字"
+  "current_deviation_constraint": "可直接注入后续写作模型的当前偏差约束，不超过500字"
 }
 
 判断规则：
@@ -438,26 +442,30 @@ const DEV_PROMPT = `你是小说剧情偏差分析与分支现实整理师。
 3. 如果只是语气轻微不同、细节缺失、暂时没提到，不要列为重大偏差。
 4. 如果当前正文已经让某个原著关键事件不再可能按原样发生，应标记 irreversible 为 true。
 5. 对 irreversible 为 true 的偏差，后续写作必须承认当前正文为新的现实，不能用同一事件、同一事故、同一理由强行恢复原著结果。
-6. 对尚未明确成立、仍可自然拉回原著的偏差，irreversible 为 false，并在 deviation_injection_prompt 中建议温和回收，而不是硬改。
-7. changed_facts 必须写成后续模型能执行的事实约束，例如“某角色当前仍存活，并且不能再按原著同一事故死亡”。
-8. preserved_facts 用来保留仍有效的原著设定，防止因为一个偏差就把整个原著世界观推翻。
-9. deviation_injection_prompt 应该是给后续写作模型看的，不要分析打分，不要解释 JSON，只写执行约束。
-10. deviation_injection_prompt 必须包含三层意思：
+6. 对尚未明确成立、仍可自然拉回原著的偏差，irreversible 为 false，并在 current_deviation_constraint 中建议温和回收，而不是硬改。
+7. changed_facts 只写本次范围新增、修正后需要追加、且后续必须承认的新事实锚点；不要重复搬运已有偏差档案中的旧锚点。
+8. current_deviation_constraint 是本次更新后的完整当前约束，必须合并“当前偏差约束”和“主要偏差”的执行含义；不要只写本次增补。
+9. preserved_facts 是本次更新后仍然有效的原著事实完整列表，只保留尚未发生、未过期、未被当前正文推翻、且不会误导后续写作的原著逻辑。
+10. current_deviation_constraint 应该是给后续写作模型看的，不要分析打分，不要解释 JSON，只写执行约束。
+11. current_deviation_constraint 必须包含三层意思：
     - 当前正文已经成立的新事实优先于原著冲突事实。
     - 原著中未被当前正文推翻的设定仍然有效。
     - 后续剧情要基于新事实自然推演连锁反应，而不是强行复刻原著事件。
-11. 已有偏差档案中的事实，除非当前正文明确推翻、改写或自然修正，否则不得删除、遗忘或降级。
-12. 死亡、身份暴露、关系断裂、阵营改变、地点转移、能力变化、已完成的关键行动等硬事实，即使最近正文没有再次提到，也必须默认保留。
-13. 若旧偏差仍有效，不要重复搬运进本次增补；只有当前范围让它产生新影响或被修正时，才写入 major_deviations、changed_facts 或 deviation_injection_prompt。
-14. 若当前正文新增了会改变后续走向的事实，应写入本次增补中。
-15. 若旧偏差被当前正文明确修正，应在 summary 与 deviation_injection_prompt 中简要说明修正后的约束。
+12. 已有偏差档案中的“已改变事实”，除非当前正文明确推翻、改写或自然修正，否则不得删除、遗忘或降级。
+13. 死亡、身份暴露、关系断裂、阵营改变、地点转移、能力变化、已完成的关键行动等硬事实，即使最近正文没有再次提到，也必须默认保留。
+14. 不要把当前正文已经成立并影响剧情的事实降格写成“user认为”“用户认为”“读者认为”“玩家认为”“用户一厢情愿”等出戏主体的单方面认定；进入正文并影响剧情的内容就是当前分支事实。
+15. 如果剧情本身是在描写信息差、隐瞒、误导、视角角色误判或角色尚不知真相，应记录为剧内认知状态，例如“当前视角角色误以为……”“某角色尚不知……”，不要改写成全知事实。
+16. 如果当前正文明确指出、修正或采用了原著设定漏洞、动机矛盾、未处理的逻辑问题、世界观解释差异，应记录为当前分支事实或偏差约束，而不是写成用户的单方面认定。
+17. 若当前正文新增了会改变后续走向的事实，应写入本次 changed_facts 中。
+18. 若旧偏差被当前正文明确修正，应在 summary 与 current_deviation_constraint 中简要说明修正后的约束。
 
 输出前暗中自检，不输出自检过程：
 - 是否是合法 JSON。
 - 是否包含所有指定字段。
 - main_plot、characters、locations、subplots 是否为 0-100 数字。
 - confidence 是否为 0-1 数字。
-- deviation_injection_prompt 是否不超过500字。
+- current_deviation_constraint 是否不超过500字。
+- 是否区分了“当前分支事实”和“角色/视角被隐瞒、误判、尚不知”的剧内认知状态。
 - 是否没有 Markdown、代码块或 JSON 外文本。`;
 
 // ============================================================
@@ -654,6 +662,7 @@ const DEFAULT_SETTINGS = {
     themeBorderless: false,
     themeCardless: false,
     themeStatusbarFollow: false,
+    themeIconReplace: false,
     themeBackground: NI_THEME_DEFAULT.background,
     themeText: NI_THEME_DEFAULT.text,
     themeUserPresets: [],
@@ -675,6 +684,7 @@ const DEFAULT_SETTINGS = {
     styleChunkIdx:  0,
     styleMode:      'sample', // 'sample' | 'manual'
     userSubEnabled: false,
+    userSubMode: 'replace', // 'replace'=替换原角人生 | 'play'=扮演原角本人
     userSubCharIdx: '',
     userSubAliases: [],
 };
@@ -727,6 +737,9 @@ const S = {
     // 文风
     styleGuide: '',         // 生成的文风执行指南文本
     deviationGuide: '',     // 当前偏差注入文本
+    devChangedFacts: '',     // 已改变事实：长期分支事实锚点
+    devCurrentConstraint: '',// 当前偏差约束：每次偏差更新后替换
+    devPreservedFacts: '',   // 仍保留的原著事实：每次偏差更新后替换
     devRunning: false,
     devAutoLastFloor: null,
     devCoveredFloor: 0,     // 当前偏差已顺序总结到第几楼
@@ -886,6 +899,21 @@ async function dbCheckFingerprint() {
 // ============================================================
 // 设置持久化
 // ============================================================
+function niUpgradeRoleplayPrompt(cfg = extension_settings[EXT_NAME] || {}) {
+    if (!cfg || typeof cfg.roleplayPrompt !== 'string') return false;
+    let nextPrompt = cfg.roleplayPrompt;
+    nextPrompt = nextPrompt.replaceAll(
+        ROLEPLAY_PROMPT_LEGACY_USER_EVENT_RULE,
+        ROLEPLAY_PROMPT_EVENT_HISTORY_LINE,
+    );
+    ROLEPLAY_PROMPT_USER_ROLE_LINES_TO_REMOVE.forEach(line => {
+        nextPrompt = nextPrompt.replaceAll(line, '').replace(/\n{3,}/g, '\n\n');
+    });
+    if (nextPrompt === cfg.roleplayPrompt) return false;
+    cfg.roleplayPrompt = nextPrompt;
+    return true;
+}
+
 function niLoadSettings() {
     extension_settings[EXT_NAME] = extension_settings[EXT_NAME] || {};
     const saved = extension_settings[EXT_NAME];
@@ -898,6 +926,7 @@ function niLoadSettings() {
         saveSettingsDebounced();
     }
     niUpgradeLegacyTbDefaultPrompts(saved);
+    if (niUpgradeRoleplayPrompt(saved)) saveSettingsDebounced();
 
     // 还原轻量索引（重数据在 niLoadSettings 末尾从服务端异步拉取）
     if (saved._stageStates) S.stageStates = saved._stageStates;
@@ -1121,8 +1150,111 @@ function niReadDeviationChatState() {
     }
 }
 
+function niParseDeviationGuideSections(text) {
+    const raw = String(text || '').trim();
+    const empty = { changedFacts: '', currentConstraint: '', preservedFacts: '' };
+    if (!raw) return empty;
+
+    const re = /【(已改变事实|当前偏差约束|主要偏差|仍保留的原著事实)】/g;
+    const hits = [];
+    let match;
+    while ((match = re.exec(raw))) hits.push({ title: match[1], index: match.index, end: re.lastIndex });
+    if (!hits.length) return { ...empty, currentConstraint: raw };
+
+    const sections = { ...empty };
+    hits.forEach((hit, i) => {
+        const next = hits[i + 1]?.index ?? raw.length;
+        const body = raw.slice(hit.end, next).trim();
+        if (!body) return;
+        if (hit.title === '已改变事实') {
+            sections.changedFacts = [sections.changedFacts, body].filter(Boolean).join('\n');
+        } else if (hit.title === '仍保留的原著事实') {
+            sections.preservedFacts = [sections.preservedFacts, body].filter(Boolean).join('\n');
+        } else if (hit.title === '主要偏差') {
+            sections.currentConstraint = [sections.currentConstraint, `【主要偏差】\n${body}`].filter(Boolean).join('\n\n');
+        } else {
+            sections.currentConstraint = [sections.currentConstraint, body].filter(Boolean).join('\n\n');
+        }
+    });
+    return sections;
+}
+
+function niNormalizeDeviationSections(source = {}) {
+    const legacyText = String(source?.deviationGuide ?? source?.guide ?? '').trim();
+    const parsed = legacyText ? niParseDeviationGuideSections(legacyText) : {};
+    return {
+        changedFacts: String(source?.changedFacts ?? source?.devChangedFacts ?? parsed.changedFacts ?? '').trim(),
+        currentConstraint: String(source?.currentConstraint ?? source?.devCurrentConstraint ?? parsed.currentConstraint ?? '').trim(),
+        preservedFacts: String(source?.preservedFacts ?? source?.devPreservedFacts ?? parsed.preservedFacts ?? '').trim(),
+    };
+}
+
+function niBuildDeviationGuideFromSections(sections = {}) {
+    const s = niNormalizeDeviationSections(sections);
+    const parts = [];
+    if (s.changedFacts) parts.push(`【已改变事实】\n${s.changedFacts}`);
+    if (s.currentConstraint) parts.push(`【当前偏差约束】\n${s.currentConstraint}`);
+    if (s.preservedFacts) parts.push(`【仍保留的原著事实】\n${s.preservedFacts}`);
+    return parts.join('\n\n').trim();
+}
+
+function niSetDeviationSections(sections = {}) {
+    const s = niNormalizeDeviationSections(sections);
+    S.devChangedFacts = s.changedFacts;
+    S.devCurrentConstraint = s.currentConstraint;
+    S.devPreservedFacts = s.preservedFacts;
+    S.deviationGuide = niBuildDeviationGuideFromSections(s);
+    return s;
+}
+
+function niGetDeviationSections({ preferUI = false } = {}) {
+    if (preferUI) {
+        const changedEl = q('#ni-dev-changed-facts');
+        const currentEl = q('#ni-dev-current-constraint');
+        const preservedEl = q('#ni-dev-preserved-facts');
+        if (changedEl || currentEl || preservedEl) {
+            return niNormalizeDeviationSections({
+                changedFacts: changedEl?.value ?? S.devChangedFacts,
+                currentConstraint: currentEl?.value ?? S.devCurrentConstraint,
+                preservedFacts: preservedEl?.value ?? S.devPreservedFacts,
+            });
+        }
+    }
+    return niNormalizeDeviationSections({
+        changedFacts: S.devChangedFacts,
+        currentConstraint: S.devCurrentConstraint,
+        preservedFacts: S.devPreservedFacts,
+        deviationGuide: S.deviationGuide,
+    });
+}
+
+function niGetDeviationGuideText({ preferUI = false } = {}) {
+    const sections = niGetDeviationSections({ preferUI });
+    const text = niBuildDeviationGuideFromSections(sections);
+    if (preferUI) niSetDeviationSections(sections);
+    S.deviationGuide = text;
+    return text;
+}
+
+function niSyncDeviationSectionInputs() {
+    const sections = niGetDeviationSections();
+    const pairs = [
+        ['#ni-dev-changed-facts', sections.changedFacts],
+        ['#ni-dev-current-constraint', sections.currentConstraint],
+        ['#ni-dev-preserved-facts', sections.preservedFacts],
+    ];
+    pairs.forEach(([sel, value]) => {
+        const el = q(sel);
+        if (el && el.value !== value) el.value = value;
+    });
+}
+
+function niUpdateDeviationSectionsFromUI() {
+    return niSetDeviationSections(niGetDeviationSections({ preferUI: true }));
+}
+
 function niApplyDeviationState(state = null, { collapsed = true, syncUI = true } = {}) {
-    S.deviationGuide = String(state?.deviationGuide ?? state?.guide ?? '');
+    niSetDeviationSections(state || {});
     S.devCoveredFloor = Math.max(0, parseInt(state?.coveredFloor ?? state?.devCoveredFloor, 10) || 0);
     S.devLastRange = state?.lastRange || state?.devLastRange || null;
     if (syncUI) niSyncDeviationResultUI({ collapsed });
@@ -1133,12 +1265,16 @@ async function niSaveDeviationChatState({ saveChat = true, chatRoot = null } = {
         const ctx = getContext();
         const root = chatRoot || ctx?.chat?.[0];
         if (!root) return false;
-        const text = String(S.deviationGuide || '');
+        const sections = niSetDeviationSections(niGetDeviationSections({ preferUI: true }));
+        const text = niBuildDeviationGuideFromSections(sections);
         const coveredFloor = Math.max(0, parseInt(S.devCoveredFloor, 10) || 0);
         if (!text.trim() && !coveredFloor && !S.devLastRange) {
             delete root.ni_dev;
         } else {
             root.ni_dev = {
+                changedFacts: sections.changedFacts,
+                currentConstraint: sections.currentConstraint,
+                preservedFacts: sections.preservedFacts,
                 deviationGuide: text,
                 coveredFloor,
                 lastRange: S.devLastRange || null,
@@ -1176,6 +1312,7 @@ function niReadLegacyDeviationState(payload = null, { includeRuntime = true } = 
     const lastRange = payload?._devLastRange ?? cfg._devLastRange ?? (includeRuntime ? S.devLastRange : null);
     return {
         deviationGuide: String(guide || ''),
+        ...niParseDeviationGuideSections(guide),
         coveredFloor: Math.max(0, parseInt(coveredFloor, 10) || 0),
         lastRange,
     };
@@ -1225,8 +1362,7 @@ function niMaybeMigrateLegacyDeviationToChat(payload = null) {
 }
 
 async function niSaveDeviationGuideNow() {
-    const el = q('#ni-dev-result');
-    if (el) S.deviationGuide = el.value;
+    niUpdateDeviationSectionsFromUI();
     niClearLegacyDeviationSettings();
     saveSettingsDebounced();
     return await niSaveDeviationChatState({ saveChat: true });
@@ -1239,8 +1375,7 @@ function niQueueDeviationGuideSave({ immediate = false } = {}) {
     }
     if (immediate) return niSaveDeviationGuideNow();
     const chatRoot = niGetDeviationChatRoot();
-    const el = q('#ni-dev-result');
-    if (el) S.deviationGuide = el.value;
+    niUpdateDeviationSectionsFromUI();
     niClearLegacyDeviationSettings();
     saveSettingsDebounced();
     niSaveDeviationChatState({ saveChat: false, chatRoot });
@@ -1460,6 +1595,7 @@ function niSaveSettings() {
     cfg.styleChunkIdx = parseInt(q('#ni-style-chunk-sel')?.value)  || 0;
     cfg.styleMode     = q('#ni-style-mode')?.value                 ?? DEFAULT_SETTINGS.styleMode;
     cfg.userSubEnabled = q('#ni-user-sub-chk')?.checked ?? (cfg.userSubEnabled ?? DEFAULT_SETTINGS.userSubEnabled);
+    cfg.userSubMode = niNormalizeUserSubMode(q('#ni-user-sub-mode .ni-user-sub-mode-btn.on')?.dataset.userSubMode ?? cfg.userSubMode);
     cfg.userSubCharIdx = q('#ni-user-sub-char')?.value ?? (cfg.userSubCharIdx ?? DEFAULT_SETTINGS.userSubCharIdx);
     if (q('#ni-user-sub-list .ni-user-sub-row')) cfg.userSubAliases = niReadUserSubAliasesFromUI();
 
@@ -1590,14 +1726,17 @@ function niSyncDevAutoUI() {
 }
 
 function niSyncDeviationResultUI({ collapsed = true, preserveBody = false } = {}) {
-    const text = String(S.deviationGuide || '').trim();
+    const text = niGetDeviationGuideText().trim();
     const wrap = q('#ni-dev-result-wrap');
     const body = q('#ni-dev-result-body');
     const icon = q('#ni-dev-result-toggle > i:last-child');
-    const resEl = q('#ni-dev-result');
     const badge = q('#ni-dev-floor-badge');
-    if (resEl && resEl.value !== (S.deviationGuide || '')) resEl.value = S.deviationGuide || '';
-    if (badge) badge.textContent = `已总结 ${Math.max(0, parseInt(S.devCoveredFloor, 10) || 0)} 楼`;
+    niSyncDeviationSectionInputs();
+    if (badge) {
+        const covered = Math.max(0, parseInt(S.devCoveredFloor, 10) || 0);
+        const total = Math.max(covered, niCurrentChatFloorCount());
+        badge.textContent = total > 0 ? `已总结 ${covered}/${total} 层` : `已总结 ${covered} 层`;
+    }
     if (wrap) wrap.style.display = text ? 'block' : 'none';
     niSyncDevButtonLabel();
     if (!body) return;
@@ -4993,8 +5132,17 @@ window.niRunCharAutoSleepForStage = niRunCharAutoSleepForStage;
 
 function niGetUserSubConfig() {
     const cfg = extension_settings[EXT_NAME] || {};
+    cfg.userSubMode = niNormalizeUserSubMode(cfg.userSubMode);
     if (!Array.isArray(cfg.userSubAliases)) cfg.userSubAliases = [];
     return cfg;
+}
+
+function niNormalizeUserSubMode(mode) {
+    return mode === 'play' ? 'play' : DEFAULT_SETTINGS.userSubMode;
+}
+
+function niIsUserSubPlayMode(cfg = niGetUserSubConfig()) {
+    return niNormalizeUserSubMode(cfg.userSubMode) === 'play';
 }
 
 function niUserSubDefaultAliasesForChar(charIdx) {
@@ -5211,6 +5359,13 @@ function niRenderUserSubUI() {
     state.textContent = enabled ? '开' : '关';
     row?.classList.toggle('ni-switch-off', !enabled);
 
+    const mode = niNormalizeUserSubMode(cfg.userSubMode);
+    q('#ni-user-sub-mode')?.querySelectorAll('.ni-user-sub-mode-btn').forEach(btn => {
+        const isOn = btn.dataset.userSubMode === mode;
+        btn.classList.toggle('on', isOn);
+        btn.setAttribute('aria-pressed', String(isOn));
+    });
+
     const selectedIdx = cfg.userSubCharIdx ?? '';
     sel.innerHTML = '<option value="">选择角色</option>' +
         (S.characters || []).map((c, i) =>
@@ -5237,6 +5392,7 @@ function niRenderUserSubUI() {
             </div>`;
         }).join('')
         : '<div class="ni-empty" style="padding:8px 0">请选择角色或添加称呼</div>';
+    niSyncUserSubPromptPreview();
 }
 
 async function niSaveUserSubFromUI({ rerender = false } = {}) {
@@ -5244,10 +5400,12 @@ async function niSaveUserSubFromUI({ rerender = false } = {}) {
     const chk = q('#ni-user-sub-chk');
     const sel = q('#ni-user-sub-char');
     if (chk) cfg.userSubEnabled = chk.checked;
+    cfg.userSubMode = niNormalizeUserSubMode(q('#ni-user-sub-mode .ni-user-sub-mode-btn.on')?.dataset.userSubMode ?? cfg.userSubMode);
     if (sel) cfg.userSubCharIdx = sel.value;
     if (q('#ni-user-sub-list')) cfg.userSubAliases = niReadUserSubAliasesFromUI();
     saveSettingsDebounced();
     niSyncRoleplayToDepth();
+    niSyncUserSubPromptPreview();
     if (rerender) niRenderUserSubUI();
 }
 
@@ -5290,13 +5448,49 @@ function niBuildUserSubIdentityPrompt() {
     if (!names.length) return '';
 
     const displayName = primaryName || names[0];
+    if (niIsUserSubPlayMode(cfg)) {
+        const namesLine = names.length > 1
+            ? `「${displayName}」及其别称/称呼（${names.join('、')}）均指向 <user>，不得再把「${displayName}」作为独立NPC演绎。`
+            : `「${displayName}」指向 <user>，不得再把「${displayName}」作为独立NPC演绎。`;
+        return `[用户代入角色]\n<user>正在扮演原著角色「${displayName}」本人。\n${namesLine}\n可将当前剧情时间点以前已经成立的身份、关系与经历作为 <user> 的既有事实。\n当前剧情时间点之后的原著选择、行动和结局只作为参考惯性，不得因为原著中「${displayName}」这样做过，就强制让 <user> 复刻。\n[/用户代入角色]`;
+    }
     return `[用户代入角色]\n<user>代表原著角色「${displayName}」。以下称呼只作为同一角色的映射：${names.join('、')}。后续正文使用<user>，不要把原名或称呼写成另一个角色。\n[/用户代入角色]`;
+}
+
+function niGetUserSubPromptPreview() {
+    const cfg = niGetUserSubConfig();
+    if (!cfg.userSubEnabled) {
+        return {
+            state: '关闭边界',
+            text: niBuildUserRoleBoundaryPrompt(),
+        };
+    }
+    const prompt = niBuildUserSubIdentityPrompt();
+    if (!prompt) {
+        return {
+            state: '尚未生效',
+            text: '当前已开启“用户代入角色”，但还没有可注入的代入提示词。\n请先选择代入角色，并至少保留一个有效称呼。有效后会在每次请求前作为隐藏系统提示注入。',
+        };
+    }
+    return {
+        state: niIsUserSubPlayMode(cfg) ? '扮演模式' : '替换模式',
+        text: prompt,
+    };
+}
+
+function niSyncUserSubPromptPreview() {
+    const ta = q('#ni-user-sub-prompt-preview');
+    const state = q('#ni-user-sub-prompt-state');
+    if (!ta && !state) return;
+    const preview = niGetUserSubPromptPreview();
+    if (ta) ta.value = preview.text || '';
+    if (state) state.textContent = preview.state || '';
 }
 
 function niBuildUserRoleBoundaryPrompt() {
     const cfg = niGetUserSubConfig();
     if (cfg.userSubEnabled) return '';
-    return `[关于用户角色]\n用户 <user> 不是原著主角，拥有独立经历和选择权。原著主角/配角仅为故事中的NPC，<user>的行为不必与原著剧情完全一致，AI 不替用户执行原著角色的行动。\n重要：用户不是原著角色，原著主角和配角均为独立NPC，禁止将原著剧情事件自动映射到用户角色。\n[/关于用户角色]`;
+    return `[关于用户角色]\n当前未启用“用户代入角色”映射：<user>不默认等同于原著主角或任何原著角色；原著主角/配角默认作为故事中的NPC处理。\n不要把原著角色经历、剧情事件、身份关系、称呼归属、原作行动或原著角色曾经做出的选择自动映射到 <user>。\n若当前对话、角色卡或其他设置明确声明 <user> 正在代入某个角色，则以该明确声明为准。\n[/关于用户角色]`;
 }
 
 function niReplaceOutsideAngleTags(text, pattern, replacement) {
@@ -7019,12 +7213,13 @@ function niDevLines(title, items) {
     return `【${title}】\n${arr.map(t => `- ${t}`).join('\n')}`;
 }
 
-function niBuildDeviationGuideFromAnalysis(json) {
-    if (!json || typeof json !== 'object') return '';
-    const parts = [];
-    const guide = niDevCleanText(json.deviation_injection_prompt);
-    if (guide) parts.push(`【当前偏差约束】\n${guide}`);
+function niDevListText(items) {
+    const arr = Array.isArray(items) ? items.map(niDevCleanText).filter(Boolean) : [];
+    if (!arr.length) return '';
+    return arr.map(t => /^([-*•]|\d+[.、])\s*/.test(t) ? t : `- ${t}`).join('\n');
+}
 
+function niBuildMajorDeviationText(json) {
     const major = Array.isArray(json.major_deviations) ? json.major_deviations : [];
     const majorLines = major.map(item => {
         if (!item || typeof item !== 'object') return '';
@@ -7036,18 +7231,57 @@ function niBuildDeviationGuideFromAnalysis(json) {
         const head = type ? `【${type}】` : '';
         return `- ${head}原著：${original || '未提供'}；当前：${current || '未提供'}${impact ? `；影响：${impact}` : ''}${lock}`;
     }).filter(Boolean);
-    if (majorLines.length) parts.push(`【主要偏差】\n${majorLines.join('\n')}`);
+    return majorLines.length ? `【主要偏差】\n${majorLines.join('\n')}` : '';
+}
 
-    const changed = niDevLines('已改变事实', json.changed_facts);
-    if (changed) parts.push(changed);
-    const preserved = niDevLines('仍保留的原著事实', json.preserved_facts);
-    if (preserved) parts.push(preserved);
+function niBuildDeviationSectionsFromAnalysis(json) {
+    if (!json || typeof json !== 'object') return { changedFacts: '', currentConstraint: '', preservedFacts: '' };
+    const guide = niDevCleanText(json.current_deviation_constraint ?? json.deviation_injection_prompt);
+    const major = niBuildMajorDeviationText(json);
+    return niNormalizeDeviationSections({
+        changedFacts: niDevListText(json.changed_facts),
+        currentConstraint: [guide, major].filter(Boolean).join('\n\n'),
+        preservedFacts: niDevListText(json.preserved_facts),
+    });
+}
 
-    return parts.join('\n\n').trim();
+function niDevLineKey(text) {
+    return String(text || '')
+        .replace(/^[-*•]\s*/, '')
+        .replace(/^\d+[.、]\s*/, '')
+        .replace(/\s+/g, '')
+        .trim();
+}
+
+function niAppendDeviationFacts(existing, additions) {
+    const oldLines = String(existing || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+    const newLines = String(additions || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+    const seen = new Set(oldLines.map(niDevLineKey).filter(Boolean));
+    for (const line of newLines) {
+        const key = niDevLineKey(line);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        oldLines.push(line);
+    }
+    return oldLines.join('\n').trim();
+}
+
+function niMergeDeviationSections(existing, next) {
+    const oldSections = niNormalizeDeviationSections(existing);
+    const nextSections = niNormalizeDeviationSections(next);
+    return niNormalizeDeviationSections({
+        changedFacts: niAppendDeviationFacts(oldSections.changedFacts, nextSections.changedFacts),
+        currentConstraint: nextSections.currentConstraint,
+        preservedFacts: nextSections.preservedFacts,
+    });
+}
+
+function niBuildDeviationGuideFromAnalysis(json) {
+    return niBuildDeviationGuideFromSections(niBuildDeviationSectionsFromAnalysis(json));
 }
 
 function niDevButtonLabel() {
-    const text = (q('#ni-dev-result')?.value || S.deviationGuide || '').trim();
+    const text = niGetDeviationGuideText({ preferUI: true }).trim();
     return text ? '更新当前偏差' : '分析当前偏差';
 }
 
@@ -7062,6 +7296,49 @@ function niDevRecentMessageLimit(auto = false) {
     const fallback = auto ? Math.max(1, DEFAULT_SETTINGS.devManualMsgCount) : DEFAULT_SETTINGS.devManualMsgCount;
     const raw = auto ? (cfg.devAutoUpdateEvery ?? fallback) : (cfg.devManualMsgCount ?? fallback);
     return niBoundIntValue(raw, fallback, 1, 200);
+}
+
+const NI_DEV_CURRENT_TEXT_LIMIT = 30000;
+const NI_DEV_RECALL_TEXT_LIMIT = 2600;
+const NI_DEV_MIN_ENTRY_TEXT_LIMIT = 180;
+
+function niDevStripInternalBlocks(text) {
+    return String(text || '')
+        .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '')
+        .trim();
+}
+
+function niDevClipMiddle(text, limit) {
+    const raw = String(text || '').trim();
+    const max = Math.max(20, parseInt(limit, 10) || 20);
+    if (raw.length <= max) return raw;
+    const marker = `\n……（本楼中间省略 ${raw.length - max} 字）……\n`;
+    const keep = Math.max(10, max - marker.length);
+    const head = Math.ceil(keep * 0.45);
+    const tail = Math.max(10, keep - head);
+    return `${raw.slice(0, head).trimEnd()}${marker}${raw.slice(-tail).trimStart()}`;
+}
+
+function niBuildDevChatEntriesText(entries, totalLimit = NI_DEV_CURRENT_TEXT_LIMIT, options = {}) {
+    const arr = Array.isArray(entries) ? entries.filter(e => e?.text) : [];
+    if (!arr.length) return '';
+    const minEntryLimit = Math.max(40, parseInt(options.minEntryLimit, 10) || NI_DEV_MIN_ENTRY_TEXT_LIMIT);
+    const preserveEachEntry = options.preserveEachEntry !== false;
+    const requestedTotal = Math.max(200, parseInt(totalLimit, 10) || NI_DEV_CURRENT_TEXT_LIMIT);
+    const maxTotal = preserveEachEntry ? Math.max(arr.length * minEntryLimit, requestedTotal) : requestedTotal;
+    let perEntryLimit = Math.max(
+        minEntryLimit,
+        Math.floor((maxTotal - arr.length * 24) / arr.length),
+    );
+    const build = () => arr
+        .map(e => `【第 ${e.floor} 楼】${e.role}\n${niDevClipMiddle(e.text, perEntryLimit)}`)
+        .join('\n\n');
+    let text = build();
+    while (text.length > maxTotal && perEntryLimit > minEntryLimit) {
+        perEntryLimit = Math.max(minEntryLimit, Math.floor(perEntryLimit * 0.82));
+        text = build();
+    }
+    return text.length > maxTotal ? niDevClipMiddle(text, maxTotal) : text;
 }
 
 function niGetRenderedChatMessages() {
@@ -7084,14 +7361,28 @@ function niGetCurrentChatMessages() {
     try {
         const ctx = getContext();
         if (Array.isArray(ctx?.chat)) {
-            return ctx.chat.filter(m => niDevMessageText(m));
+            const renderedById = new Map();
+            const renderedByIndex = [];
+            niGetRenderedChatMessages().forEach((m, i) => {
+                if (Number.isFinite(m.mes_id)) renderedById.set(m.mes_id, m);
+                renderedByIndex[i] = m;
+            });
+            return ctx.chat
+                .map((m, i) => {
+                    const id = Number(m?.mes_id ?? m?.id ?? i);
+                    const rendered = renderedById.get(id) || renderedByIndex[i];
+                    const renderedText = String(rendered?.mes || '').trim();
+                    return renderedText ? { ...m, mes: renderedText } : m;
+                })
+                .filter(m => niDevMessageText(m));
         }
     } catch (_) {}
     return niGetRenderedChatMessages();
 }
 
 function niDevMessageText(m) {
-    return String(m?.mes ?? m?.message ?? m?.content ?? '').trim();
+    const raw = String(m?.mes ?? m?.message ?? m?.content ?? '').trim();
+    return niDevStripInternalBlocks(raw) || raw;
 }
 
 function niDevMessageRole(m) {
@@ -7126,22 +7417,35 @@ function niBuildChatRangeContext(limit, range = null) {
         const covered = Math.max(0, Math.min(total, parseInt(S.devCoveredFloor, 10) || 0));
         const startFloor = covered + 1;
         if (startFloor > total) {
-            return { text: '', startFloor, endFloor: total, total, count: 0 };
+            return { text: '', promptText: '', recallText: '', entries: [], startFloor, endFloor: total, total, count: 0 };
         }
         r = { startFloor, endFloor: Math.min(total, startFloor + safeLimit - 1) };
     }
     if (!total || r.startFloor > total) {
-        return { text: '', startFloor: r?.startFloor || 1, endFloor: Math.min(r?.endFloor || 0, total), total, count: 0 };
+        return { text: '', promptText: '', recallText: '', entries: [], startFloor: r?.startFloor || 1, endFloor: Math.min(r?.endFloor || 0, total), total, count: 0 };
     }
     const startFloor = Math.max(1, r.startFloor);
     const endFloor = Math.min(total, Math.max(startFloor, r.endFloor));
-    const selected = messages.slice(startFloor - 1, endFloor).filter(m => niDevMessageText(m));
-    const text = selected
-        .map(m => {
-            return `${niDevMessageRole(m)} ${niDevMessageText(m)}`;
-        })
+    const entries = [];
+    for (let i = startFloor - 1; i < endFloor; i++) {
+        const m = messages[i];
+        const text = niDevMessageText(m);
+        if (!text) continue;
+        entries.push({ floor: i + 1, role: niDevMessageRole(m), text });
+    }
+    const text = entries
+        .map(e => `${e.role} ${e.text}`)
         .join('\n');
-    return { text, startFloor, endFloor, total, count: selected.length };
+    return {
+        text,
+        promptText: niBuildDevChatEntriesText(entries, NI_DEV_CURRENT_TEXT_LIMIT),
+        recallText: niBuildDevChatEntriesText(entries, NI_DEV_RECALL_TEXT_LIMIT, { minEntryLimit: 60, preserveEachEntry: false }),
+        entries,
+        startFloor,
+        endFloor,
+        total,
+        count: entries.length,
+    };
 }
 
 function niGetDevRetryRange(auto = false) {
@@ -7228,43 +7532,94 @@ function niBuildDeviationPrompt(promptTemplate, reference, recentMsgs, existingD
     const existingText = (existingDeviation || '').trim();
     const existingBlock = existingText || '（无）';
     const hasExistingSlot = /\{EXISTING(?:_DEVIATION)?\}/.test(promptTemplate || '');
+    const hasReferenceSlot = /\{REFERENCE\}/.test(promptTemplate || '');
+    const hasCurrentSlot = /\{CURRENT\}/.test(promptTemplate || '');
     const rangeLabel = niDevRangeLabel(rangeCtx);
+    const referenceBlock = String(reference || '').trim();
+    const currentBlock = (rangeCtx?.promptText || recentMsgs || '').trim();
     let prompt = (promptTemplate || DEV_PROMPT)
-        .replace(/\{REFERENCE\}/g, reference.slice(0, 3000))
-        .replace(/\{CURRENT\}/g, recentMsgs.slice(0, 2000))
-        .replace(/\{RANGE\}/g, rangeLabel)
-        .replace(/\{EXISTING(?:_DEVIATION)?\}/g, existingBlock.slice(0, 3000));
+        .replace(/\{REFERENCE\}/g, () => reference.slice(0, 3000))
+        .replace(/\{CURRENT\}/g, () => currentBlock)
+        .replace(/\{RANGE\}/g, () => rangeLabel)
+        .replace(/\{EXISTING(?:_DEVIATION)?\}/g, () => existingBlock.slice(0, 3000));
 
     // 兼容用户保存过旧版/自定义提示词：没有占位符时仍注入旧偏差档案。
     if (existingText && !hasExistingSlot) {
-        prompt += `\n\n【已有偏差档案】\n以下是此前已经保存的当前偏差档案，代表当前分支现实中已经成立且仍需遵守的事实。旧偏差只作为上下文，除非当前正文明确推翻、改写或自然修正，否则不得删除、遗忘或降级。\n<existing_deviation>\n${existingBlock.slice(0, 3000)}\n</existing_deviation>`;
+        prompt += `\n\n【已有偏差档案】\n以下是此前已经保存的当前偏差档案，代表当前分支现实中已经成立且仍需遵守的事实。已改变事实只追加新锚点；当前偏差约束和仍保留的原著事实由本次结果完整替换。\n<existing_deviation>\n${existingBlock.slice(0, 3000)}\n</existing_deviation>`;
     }
     const modeLine = mode === 'retry'
-        ? '这是对上一次偏差范围的重试。请只在本次范围内重新生成增补 JSON，用来替换该范围原来的结果。'
+        ? '这是对上一次偏差范围的重试。请重新生成 JSON：changed_facts 只写本范围仍成立且需要追加的新锚点；current_deviation_constraint 与 preserved_facts 输出更新后的完整内容。'
         : (existingText
-            ? '这是在已有当前偏差基础上的增量更新。请只输出本次范围新增、修正或产生连锁影响的偏差增补。'
-            : '这是首次偏差分析。请只输出本次范围内已经成立的偏差档案。');
-    prompt += `\n\n【本次分析范围】\n${rangeLabel}（共 ${rangeCtx.count || 0} 楼）\n\n【本次运行强制要求】\n${modeLine}\n已有偏差档案不得被重写、压缩、删除、替换或完整复述。若旧偏差仍有效但本次范围没有带来新影响，不要重复搬运旧偏差。若本次范围没有新增重大偏差，JSON 数组可以为空，summary 简述“本范围未发现新增重大偏差”。`;
+            ? '这是在已有当前偏差基础上的更新。请只在 changed_facts 中输出本次范围新增或修正后必须追加的事实锚点；current_deviation_constraint 与 preserved_facts 输出更新后的完整内容。'
+            : '这是首次偏差分析。请输出本次范围内已经成立的偏差档案。');
+    prompt += `\n\n【本次分析范围】\n${rangeLabel}（共 ${rangeCtx.count || 0} 楼）\n\n【本次运行强制要求】\n${modeLine}\nchanged_facts 不要重复搬运已有锚点；current_deviation_constraint 必须完整替换当前偏差约束并包含主要偏差的执行含义；preserved_facts 必须完整替换仍保留的原著事实，只保留尚未发生、仍适用、不会误导后续写作的原著逻辑。若本次范围没有新增重大偏差，JSON 数组可以为空，summary 简述“本范围未发现新增重大偏差”。不要把当前正文已经采纳并影响剧情的内容写成“用户/读者/玩家”的单方面认定；如果剧情本身是在描写信息差、隐瞒、误导或角色误判，请记录为剧内认知状态，而不是改写成全知事实。`;
+
+    if (referenceBlock && !hasReferenceSlot) {
+        prompt += `\n\n【原著参考内容】\n<reference>\n${referenceBlock.slice(0, 3000)}\n</reference>`;
+    }
+    if (currentBlock && !hasCurrentSlot) {
+        prompt += `\n\n【本次范围正文】\n<current>\n${currentBlock}\n</current>`;
+    }
 
     return prompt;
+}
+
+function niGetEnabledDevStages() {
+    const n = Math.max(0, parseInt(S.stageMapN, 10) || 0);
+    if (n > 0) {
+        const stages = [];
+        for (let i = 1; i <= n; i++) {
+            if (S.stageStates[i] !== false) stages.push(i);
+        }
+        return stages;
+    }
+    return Object.entries(S.stageStates || {})
+        .filter(([, on]) => on)
+        .map(([k]) => Number(k))
+        .filter(si => Number.isFinite(si) && si > 0);
+}
+
+function niBuildDevStageReference(stages, title = '阶段剧情文本') {
+    const stageList = [...new Set((stages || []).map(si => Number(si)).filter(si => Number.isFinite(si) && si > 0))].sort((a, b) => a - b);
+    const plotLines = [];
+    for (const si of stageList) {
+        const nodes = getNodesForStage(si);
+        const allNodes = niMergeStageNodes(nodes);
+        if (allNodes.length) {
+            plotLines.push(`【第 ${si} 阶段剧情节点】`);
+            allNodes.forEach(p => {
+                const loc = p.location ? `（${p.location}）` : '';
+                plotLines.push(`· ${p.title}${loc}：${p.body || ''}`);
+            });
+        } else {
+            const summary = S.stageSummaries[si];
+            if (summary && summary.trim()) {
+                plotLines.push(`【第 ${si} 阶段概括】`);
+                plotLines.push(summary.trim());
+            }
+        }
+    }
+    return plotLines.length ? `[${title}]\n${plotLines.join('\n')}\n[/${title}]` : '';
 }
 
 async function niRunDev(options = {}) {
     const auto = !!options.auto;
     const retry = !!options.retry;
     if (S.devRunning) return { ok: false, skipped: true, reason: 'running' };
-    niLoadDeviationStateFromChat({ allowLegacyMigration: false, collapsed: true, syncUI: !auto });
+    if (!options.skipStateLoad) {
+        niLoadDeviationStateFromChat({ allowLegacyMigration: false, collapsed: true, syncUI: !auto });
+    }
 
     S.devRunning = true;
     niSetDevButtonState({ running: true });
 
     const devPanel = q('#ni-dev-panel');
     const noteEl = q('#ni-dev-note');
-    if (devPanel) devPanel.style.display = 'block';
+    if (devPanel) devPanel.style.display = 'none';
 
     try {
-        const existingDeviation = String(S.deviationGuide || '').trim();
-        S.deviationGuide = existingDeviation;
+        const existingSections = niSetDeviationSections(niGetDeviationSections({ preferUI: true }));
+        const existingDeviation = niBuildDeviationGuideFromSections(existingSections);
 
         const recentLimit = niDevRecentMessageLimit(auto);
         const retryRange = retry ? niGetDevRetryRange(auto) : null;
@@ -7284,9 +7639,7 @@ async function niRunDev(options = {}) {
         }
 
         // 收集已开启阶段，区分已向量 / 未向量
-        const enabledStages = Object.entries(S.stageStates)
-            .filter(([, on]) => on)
-            .map(([k]) => Number(k));
+        const enabledStages = niGetEnabledDevStages();
 
         if (!enabledStages.length) {
             if (noteEl) noteEl.textContent = '没有已开启的阶段，请先在「阶段」页开启至少一个阶段。';
@@ -7304,38 +7657,30 @@ async function niRunDev(options = {}) {
         // ① 已向量阶段 → 向量召回
         if (vecStages.length) {
             try {
-                const vecRef = await recallRelevant(recentMsgs.slice(0, 500), vecStages);
+                const recallQuery = (chatCtx.recallText || recentMsgs).trim();
+                const vecRef = await recallRelevant(recallQuery, vecStages);
                 if (vecRef.trim()) refParts.push(`[向量召回片段]\n${vecRef}\n[/向量召回片段]`);
-            } catch (e) { console.warn('[NI] 偏差分析向量召回失败:', e); }
+                else {
+                    const fallbackRef = niBuildDevStageReference(vecStages, '向量召回为空时的阶段剧情文本');
+                    if (fallbackRef) refParts.push(fallbackRef);
+                }
+            } catch (e) {
+                console.warn('[NI] 偏差分析向量召回失败:', e);
+                const fallbackRef = niBuildDevStageReference(vecStages, '向量召回失败时的阶段剧情文本');
+                if (fallbackRef) refParts.push(fallbackRef);
+            }
         }
 
         // ② 未向量阶段 → 直接使用剧情节点文本
         if (rawStages.length) {
-            const plotLines = [];
-            for (const si of rawStages) {
-                const nodes = getNodesForStage(si);
-                const allNodes = niMergeStageNodes(nodes);
-                if (allNodes.length) {
-                    plotLines.push(`【第 ${si} 阶段剧情节点】`);
-                    allNodes.forEach(p => {
-                        const loc = p.location ? `（${p.location}）` : '';
-                        plotLines.push(`· ${p.title}${loc}：${p.body || ''}`);
-                    });
-                } else {
-                    const summary = S.stageSummaries[si];
-                    if (summary && summary.trim()) {
-                        plotLines.push(`【第 ${si} 阶段概括】`);
-                        plotLines.push(summary.trim());
-                    }
-                }
-            }
-            if (plotLines.length) refParts.push(`[阶段剧情文本]\n${plotLines.join('\n')}\n[/阶段剧情文本]`);
+            const rawRef = niBuildDevStageReference(rawStages);
+            if (rawRef) refParts.push(rawRef);
         }
 
         const reference = refParts.join('\n\n');
 
         if (!reference.trim()) {
-            if (noteEl) noteEl.textContent = '未能获取参考内容（已向量阶段：无语义召回结果；未向量阶段：无剧情节点或概括文本）。';
+            if (noteEl) noteEl.textContent = '未能获取参考内容（向量召回、阶段剧情节点与阶段概括均为空）。';
             return { ok: false, reason: 'empty_reference' };
         }
 
@@ -7353,8 +7698,8 @@ async function niRunDev(options = {}) {
             animateBar(`ni-d${i}`, `ni-s${i}`, val);
         });
         if (noteEl) noteEl.textContent = json.summary || '';
-        const nextGuide = niBuildDeviationGuideFromAnalysis(json);
-        S.deviationGuide = niMergeDeviationGuide(existingDeviation, nextGuide, chatCtx, { retry });
+        const nextSections = niBuildDeviationSectionsFromAnalysis(json);
+        niSetDeviationSections(niMergeDeviationSections(existingSections, nextSections));
         niSetDevProgress(chatCtx);
         niSyncDeviationResultUI({ collapsed: true });
         await niQueueDeviationGuideSave({ immediate: true });
@@ -7378,14 +7723,32 @@ function niResetDevAutoCounter() {
 }
 
 function niNotifyDevAutoComplete(result) {
-    const range = result?.range;
-    const msg = range?.count
-        ? `前文偏差已自动更新完成（本次更新${niDevRangeLabel(range)}）。`
+    const results = (Array.isArray(result) ? result : [result]).filter(r => r?.ok);
+    const ranges = results
+        .map(r => r?.range)
+        .filter(range => range?.count)
+        .map(range => niDevRangeLabel(range));
+    const msg = ranges.length > 1
+        ? `前文偏差已自动更新完成（本次更新${ranges.join('、')}）。`
+        : ranges.length === 1
+        ? `前文偏差已自动更新完成（本次更新${ranges[0]}）。`
         : '前文偏差已自动更新完成。';
     alert(msg);
 }
 
-async function niMaybeAutoRunDev({ requireNewMessage = false } = {}) {
+let _niDevAutoBatchRunning = false;
+
+function niDevCoveredFloorFor(total) {
+    return Math.max(0, Math.min(total, parseInt(S.devCoveredFloor, 10) || 0));
+}
+
+function niDevAutoCatchupReady(every, total = niCurrentChatFloorCount()) {
+    if (every <= 0 || !total) return false;
+    const covered = niDevCoveredFloorFor(total);
+    return total - covered >= every;
+}
+
+async function niMaybeAutoRunDev({ requireNewMessage = false, forceStart = false } = {}) {
     if (extension_settings[EXT_NAME]?.pluginEnabled === false) return;
     const every = niDevAutoEvery();
     if (every <= 0) {
@@ -7402,16 +7765,56 @@ async function niMaybeAutoRunDev({ requireNewMessage = false } = {}) {
             return;
         }
     }
-    const covered = Math.max(0, Math.min(floor, parseInt(S.devCoveredFloor, 10) || 0));
+    const covered = niDevCoveredFloorFor(floor);
+    if (!forceStart && !covered && !niNormalizeDevRange(S.devLastRange)) {
+        if (requireNewMessage) S.devAutoLastFloor = floor;
+        return;
+    }
     if (floor - covered < every) {
         if (requireNewMessage) S.devAutoLastFloor = floor;
         return;
     }
-    if (S.devRunning) return;
+    if (S.devRunning || _niDevAutoBatchRunning) return;
 
-    const result = await niRunDev({ auto: true });
-    S.devAutoLastFloor = niCurrentChatFloorCount();
-    if (result?.ok) niNotifyDevAutoComplete(result);
+    _niDevAutoBatchRunning = true;
+    const results = [];
+    let lastResult = null;
+    let stoppedByStall = false;
+    try {
+        while (true) {
+            const currentFloor = niCurrentChatFloorCount();
+            const beforeCovered = niDevCoveredFloorFor(currentFloor);
+            if (currentFloor - beforeCovered < every) break;
+
+            lastResult = await niRunDev({ auto: true, skipStateLoad: results.length > 0 });
+            S.devAutoLastFloor = niCurrentChatFloorCount();
+            if (!lastResult?.ok) break;
+
+            results.push(lastResult);
+            const afterFloor = niCurrentChatFloorCount();
+            const afterCovered = niDevCoveredFloorFor(afterFloor);
+            if (afterCovered <= beforeCovered) {
+                stoppedByStall = true;
+                console.warn('[NI] 自动偏差分析未推进已总结楼层，停止连续补跑。', { beforeCovered, afterCovered });
+                break;
+            }
+        }
+    } finally {
+        _niDevAutoBatchRunning = false;
+        S.devAutoLastFloor = niCurrentChatFloorCount();
+    }
+
+    if (results.length && !stoppedByStall && lastResult?.ok) niNotifyDevAutoComplete(results);
+    if (results.length) {
+        return {
+            ok: lastResult?.ok !== false && !stoppedByStall,
+            auto: true,
+            results,
+            range: results[results.length - 1]?.range,
+            coveredFloor: S.devCoveredFloor,
+        };
+    }
+    return lastResult;
 }
 
 function niBindDeviationAutoUpdateEvents() {
@@ -7840,10 +8243,14 @@ async function onPromptReady(eventData) {
     // ③ 角色人设注入（enabled=true 且有内容的角色）
     const charLines = [];
     if (S.characters.length) {
-        S.characters.forEach(c => {
+        const userSubCfg = niGetUserSubConfig();
+        const userSubCharIdx = parseInt(userSubCfg.userSubCharIdx, 10);
+        const userSubPlayMode = userSubCfg.userSubEnabled && niIsUserSubPlayMode(userSubCfg);
+        S.characters.forEach((c, idx) => {
             if (!c.name) return;
             if (c.enabled === false) return;
-            const lines = [`[原著角色NPC：${c.name}（${c.role || '其他'}）]`];
+            const tagName = userSubPlayMode && idx === userSubCharIdx ? '原著角色本人' : '原著角色NPC';
+            const lines = [`[${tagName}：${c.name}（${c.role || '其他'}）]`];
             const showRaw = c.showRaw !== false;
             const showAi  = c.showAi  !== false;
             if (showAi && c.aiProfile) {
@@ -7866,7 +8273,13 @@ async function onPromptReady(eventData) {
         });
     }
     if (charLines.length) {
-        const charContent = `[原著角色人设]\n说明：以下所有原著角色都是故事中的独立NPC，不等同于 <user>。AI 可演绎这些NPC，但不得替 <user> 执行其行动，也不得把原著角色经历、剧情事件或身份关系自动映射到 <user>。\n\n${charLines.join('\n\n')}\n[/原著角色人设]`;
+        const userSubCfg = niGetUserSubConfig();
+        const charIntro = userSubCfg.userSubEnabled
+            ? (niIsUserSubPlayMode(userSubCfg)
+                ? '说明：以下为原著角色资料。若“用户代入角色”已声明 <user> 正在扮演其中某个原著角色本人，则该角色资料属于 <user> 的既有身份与人物基础；其他角色仍作为NPC演绎。'
+                : '说明：以下为原著角色资料。若“用户代入角色”已声明 <user> 代表其中某个角色，则该角色资料可作为 <user> 的身份与人物基础；其他角色仍作为NPC演绎。')
+            : '说明：以下原著角色默认作为故事中的独立NPC处理，不默认等同于 <user>；不要把原著角色经历、剧情事件、身份关系或原著角色曾经做出的选择自动映射到 <user>。';
+        const charContent = `[原著角色人设]\n${charIntro}\n\n${charLines.join('\n\n')}\n[/原著角色人设]`;
         doInject(`${EXT_NAME}_char`, charContent, charPos, charDepth, charRole);
     }
 
@@ -7886,7 +8299,7 @@ async function onPromptReady(eventData) {
     }
 
     // ── 偏差注入 ──
-    const deviationGuide = String(S.deviationGuide || '').trim();
+    const deviationGuide = niGetDeviationGuideText({ preferUI: true }).trim();
     if (deviationGuide) {
         S.deviationGuide = deviationGuide;
         const devPos   = cfg.devInjPos   ?? DEFAULT_SETTINGS.devInjPos;
@@ -8575,8 +8988,9 @@ async function niDeleteNovelSnapshot(idx) {
             characters: [], plots: { main: [], sub: [], pivot: [] },
             stageStates: {}, stageSummaries: {}, stageTitles: {}, stageMap: {}, stageMapN: 0,
             vecDone: false, stageVecDone: {}, novelKey: '', heavyFileKey: '',
-            styleGuide: '', deviationGuide: '', devCoveredFloor: 0, devLastRange: null,
+            styleGuide: '', deviationGuide: '', devChangedFacts: '', devCurrentConstraint: '', devPreservedFacts: '', devCoveredFloor: 0, devLastRange: null,
         });
+        niSyncDeviationResultUI({ collapsed: true });
         await niSaveDeviationChatState({ saveChat: true });
         ['_characters','_plots','_stageStates','_stageSummaries','_stageTitles',
          '_chunkResults','_chunkStatus','_novelKey','_vecDone','_stageVecDone',
@@ -8963,8 +9377,9 @@ async function niClearAllData() {
             characters: [], plots: { main: [], sub: [], pivot: [] },
             stageStates: {}, stageSummaries: {}, stageTitles: {}, stageMap: {}, stageMapN: 0,
             vecDone: false, stageVecDone: {}, novelKey: '', heavyFileKey: '',
-            styleGuide: '', deviationGuide: '', devCoveredFloor: 0, devLastRange: null,
+            styleGuide: '', deviationGuide: '', devChangedFacts: '', devCurrentConstraint: '', devPreservedFacts: '', devCoveredFloor: 0, devLastRange: null,
         });
+        niSyncDeviationResultUI({ collapsed: true });
         await niSaveDeviationChatState({ saveChat: true });
         const cfg = extension_settings[EXT_NAME];
         if (oldNovelKey && Array.isArray(cfg.novelLibrary)) {
@@ -9313,9 +9728,20 @@ jQuery(async () => {
         niTogglePanel('ni-user-sub-panel', 'ni-user-sub-cfg-btn');
         niRenderUserSubUI();
     });
+    $app.on('click', '#ni-user-sub-prompt-btn', () => {
+        niTogglePanel('ni-user-sub-pb', 'ni-user-sub-prompt-btn');
+        niSyncUserSubPromptPreview();
+    });
     $app.on('change', '#ni-user-sub-chk', function() {
         extension_settings[EXT_NAME].userSubEnabled = this.checked;
         niSaveUserSubFromUI({ rerender: true });
+    });
+    $app.on('click', '.ni-user-sub-mode-btn', function() {
+        const cfg = niGetUserSubConfig();
+        cfg.userSubMode = niNormalizeUserSubMode(this.dataset.userSubMode);
+        niRenderUserSubUI();
+        saveSettingsDebounced();
+        niSyncRoleplayToDepth();
     });
     $app.on('change', '#ni-user-sub-char', async function() {
         const cfg = niGetUserSubConfig();
@@ -9351,6 +9777,7 @@ jQuery(async () => {
         await niSaveUserSubRowState(row);
         saveSettingsDebounced();
         niSyncRoleplayToDepth();
+        niSyncUserSubPromptPreview();
     });
     $app.on('input', '.ni-user-sub-name', () => {
         niSaveUserSubFromUI();
@@ -9387,7 +9814,13 @@ jQuery(async () => {
 
     // 偏差分析
     $app.on('click', '#ni-btn-dev', async () => {
-        const result = await niRunDev();
+        const every = niDevAutoEvery();
+        let result = null;
+        if (niDevAutoCatchupReady(every)) {
+            result = await niMaybeAutoRunDev({ forceStart: true });
+            if (result) return;
+        }
+        result = await niRunDev();
         if (result?.ok) niResetDevAutoCounter();
     });
     $app.on('click', '#ni-dev-cfg-btn', () => {
@@ -9400,7 +9833,6 @@ jQuery(async () => {
         niSyncDevAutoUI();
         niSaveSettings();
         niResetDevAutoCounter();
-        niMaybeAutoRunDev().catch(e => console.warn('[NI] 自动偏差分析失败:', e));
     });
     $app.on('input', '#ni-dev-pt-content', () => niSaveSettings());
     $app.on('click', '#ni-dev-pt-reset', () => {
@@ -9408,19 +9840,18 @@ jQuery(async () => {
         if (el) el.value = DEV_PROMPT;
         niSaveSettings();
     });
-    $app.on('input', '#ni-dev-result', function() {
-        S.deviationGuide = this.value;
-        if (!this.value.trim()) {
+    $app.on('input', '#ni-dev-changed-facts, #ni-dev-current-constraint, #ni-dev-preserved-facts', function() {
+        const sections = niUpdateDeviationSectionsFromUI();
+        if (!niBuildDeviationGuideFromSections(sections).trim()) {
             S.devCoveredFloor = 0;
             S.devLastRange = null;
         }
-        if (this.value.trim()) niSyncDeviationResultUI({ preserveBody: true });
-        else niSyncDeviationResultUI({ preserveBody: true });
+        niSyncDeviationResultUI({ preserveBody: true });
         niQueueDeviationGuideSave();
     });
-    $app.on('blur', '#ni-dev-result', async function() {
-        S.deviationGuide = this.value;
-        if (!this.value.trim()) {
+    $app.on('blur', '#ni-dev-changed-facts, #ni-dev-current-constraint, #ni-dev-preserved-facts', async function() {
+        const sections = niUpdateDeviationSectionsFromUI();
+        if (!niBuildDeviationGuideFromSections(sections).trim()) {
             S.devCoveredFloor = 0;
             S.devLastRange = null;
         }
@@ -9884,6 +10315,9 @@ jQuery(async () => {
     });
     $app.on('change', '#ni-theme-statusbar-follow', function() {
         niThemeEditor.setStatusbarFollow(this.checked);
+    });
+    $app.on('change', '#ni-theme-icon-replace', function() {
+        niThemeEditor.setIconReplace(this.checked);
     });
     $app.on('click', '#ni-theme-import', () => q('#ni-theme-import-file')?.click());
     $app.on('change', '#ni-theme-import-file', function() {
