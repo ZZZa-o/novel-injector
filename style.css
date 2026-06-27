@@ -1104,6 +1104,7 @@
 .ni-dev-fill { height: 100%; border-radius: 3px; background: #BA7517; transition: width .6s ease; }
 .ni-dev-val { font-size: 12px; font-weight: 500; color: #633806; width: 30px; text-align: right; }
 .ni-dev-note { font-size: 12px; color: #854F0B; line-height: 1.6; margin-top: 7px; }
+.ni-dev-note:empty { display: none; }
 
 /* ---- Character Cards ---- */
 .ni-char-card-legacy-reset { /* merged into new .ni-char-card below */ }

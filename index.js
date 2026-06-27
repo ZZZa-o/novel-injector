@@ -1273,7 +1273,7 @@ async function niSaveDeviationChatState({ saveChat = true, chatRoot = null } = {
         if (!root) return false;
         const sections = niSetDeviationSections(niGetDeviationSections({ preferUI: true }));
         const text = niBuildDeviationGuideFromSections(sections);
-        const coveredFloor = Math.max(0, parseInt(S.devCoveredFloor, 10) || 0);
+        const coveredFloor = niNormalizeDevCoveredFloorToTotal(niCurrentChatFloorCount());
         if (!text.trim() && !coveredFloor && !S.devLastRange) {
             delete root.ni_dev;
         } else {
@@ -1739,9 +1739,8 @@ function niSyncDeviationResultUI({ collapsed = true, preserveBody = false } = {}
     const badge = q('#ni-dev-floor-badge');
     niSyncDeviationSectionInputs();
     if (badge) {
-        const rawCovered = Math.max(0, parseInt(S.devCoveredFloor, 10) || 0);
         const total = niCurrentChatFloorCount();
-        const covered = total > 0 ? Math.min(rawCovered, total) : rawCovered;
+        const covered = niNormalizeDevCoveredFloorToTotal(total, { save: true });
         badge.textContent = total > 0 ? `已总结 ${covered}/${total} 层` : `已总结 ${covered} 层`;
     }
     if (wrap) wrap.style.display = text ? 'block' : 'none';
@@ -7775,7 +7774,7 @@ function niBuildChatRangeContext(limit, range = null) {
     const safeLimit = Math.max(1, parseInt(limit, 10) || 1);
     let r = niNormalizeDevRange(range);
     if (!r) {
-        const covered = Math.max(0, Math.min(total, parseInt(S.devCoveredFloor, 10) || 0));
+        const covered = niNormalizeDevCoveredFloorToTotal(total);
         const startFloor = covered + 1;
         if (startFloor > total) {
             return { text: '', promptText: '', recallText: '', entries: [], startFloor, endFloor: total, total, count: 0 };
@@ -7816,7 +7815,7 @@ function niBuildChatRangeContext(limit, range = null) {
 function niGetDevRetryRange(auto = false) {
     const saved = niNormalizeDevRange(S.devLastRange);
     if (saved) return saved;
-    const covered = Math.max(0, parseInt(S.devCoveredFloor, 10) || 0);
+    const covered = niNormalizeDevCoveredFloorToTotal(niCurrentChatFloorCount());
     if (!covered) return null;
     const limit = niDevRecentMessageLimit(auto);
     return niNormalizeDevRange({ startFloor: Math.max(1, covered - limit + 1), endFloor: covered });
@@ -7970,7 +7969,11 @@ function niBuildDevStageReference(stages, title = '阶段剧情文本') {
 async function niRunDev(options = {}) {
     const auto = !!options.auto;
     const retry = !!options.retry;
-    if (S.devRunning) return { ok: false, skipped: true, reason: 'running' };
+    if (S.devRunning) {
+        const noteEl = q('#ni-dev-note');
+        if (noteEl) noteEl.textContent = '偏差分析正在运行，请稍候。';
+        return { ok: false, skipped: true, reason: 'running' };
+    }
     if (!options.skipStateLoad) {
         niLoadDeviationStateFromChat({ allowLegacyMigration: false, collapsed: true, syncUI: !auto });
     }
@@ -7981,6 +7984,9 @@ async function niRunDev(options = {}) {
     const devPanel = q('#ni-dev-panel');
     const noteEl = q('#ni-dev-note');
     if (devPanel) devPanel.style.display = 'none';
+    if (noteEl) noteEl.textContent = retry
+        ? '正在重试偏差分析...'
+        : (auto ? '正在自动更新偏差...' : '正在更新当前偏差...');
 
     try {
         const existingSections = niSetDeviationSections(niGetDeviationSections({ preferUI: true }));
@@ -7994,6 +8000,7 @@ async function niRunDev(options = {}) {
         }
         const chatCtx = niBuildChatRangeContext(recentLimit, retryRange);
         const recentMsgs = chatCtx.text;
+        if (noteEl && chatCtx.count) noteEl.textContent = `${retry ? '正在重试' : '正在分析'}${niDevRangeLabel(chatCtx)}...`;
         if (!chatCtx.count || !recentMsgs.trim()) {
             if (noteEl) {
                 noteEl.textContent = retry
@@ -8062,7 +8069,7 @@ async function niRunDev(options = {}) {
             const val = Math.max(0, Math.min(100, json[f] || 0));
             animateBar(`ni-d${i}`, `ni-s${i}`, val);
         });
-        if (noteEl) noteEl.textContent = json.summary || '';
+        if (noteEl) noteEl.textContent = json.summary || `${niDevRangeLabel(chatCtx)}偏差已更新。`;
         const nextSections = niBuildDeviationSectionsFromAnalysis(json);
         niSetDeviationSections(niMergeDeviationSections(existingSections, nextSections));
         niSetDevProgress(chatCtx);
@@ -8093,6 +8100,20 @@ function niCurrentChatFloorCount(messages = null) {
     return floors.length ? Math.max(...floors) : 0;
 }
 
+function niNormalizeDevCoveredFloorToTotal(total = niCurrentChatFloorCount(), { save = false } = {}) {
+    const raw = Math.max(0, parseInt(S.devCoveredFloor, 10) || 0);
+    const safeTotal = Math.max(0, parseInt(total, 10) || 0);
+    const covered = safeTotal > 0 ? Math.min(raw, safeTotal) : raw;
+    if (covered !== raw) {
+        S.devCoveredFloor = covered;
+        if (save) {
+            Promise.resolve(niQueueDeviationGuideSave({ immediate: true }))
+                .catch(e => console.warn('[NI] 偏差楼层状态保存失败:', e));
+        }
+    }
+    return covered;
+}
+
 function niResetDevAutoCounter() {
     S.devAutoLastFloor = niCurrentChatFloorCount();
 }
@@ -8114,7 +8135,7 @@ function niNotifyDevAutoComplete(result) {
 let _niDevAutoBatchRunning = false;
 
 function niDevCoveredFloorFor(total) {
-    return Math.max(0, Math.min(total, parseInt(S.devCoveredFloor, 10) || 0));
+    return niNormalizeDevCoveredFloorToTotal(total);
 }
 
 function niDevAutoCatchupReady(every, total = niCurrentChatFloorCount()) {
@@ -10197,13 +10218,7 @@ jQuery(async () => {
 
     // 偏差分析
     $app.on('click', '#ni-btn-dev', async () => {
-        const every = niDevAutoEvery();
-        let result = null;
-        if (niDevAutoCatchupReady(every)) {
-            result = await niMaybeAutoRunDev({ forceStart: true });
-            if (result) return;
-        }
-        result = await niRunDev();
+        const result = await niRunDev();
         if (result?.ok) niResetDevAutoCounter();
     });
     $app.on('click', '#ni-dev-cfg-btn', () => {
