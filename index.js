@@ -12436,6 +12436,11 @@ async function niTbToggleCheck(idx) {
     const newDone = !node.done;
     S.tbNodeDone[node.id] = newDone;
     if (node.legacyId && node.legacyId !== node.id) delete S.tbNodeDone[node.legacyId];
+    if (!newDone) {
+        for (const key of _tbAdvanceSent) {
+            if (key.startsWith(`${node.id}->`)) _tbAdvanceSent.delete(key);
+        }
+    }
 
     // 更新 DOM 立即反馈
     document.getElementById(`ni-tb-chk${idx}`)?.classList.toggle('checked', newDone);
@@ -13430,31 +13435,24 @@ console.log('[NI-TB] 穿书模式模块已加载');
                 '</span>' +
                 '<span class="ni-nr-status"><span class="ni-nr-chk' + (isDone ? ' checked' : '') + '" id="ni-pop-chk'+gi+'">' + (isDone ? '✔' : '') + '</span></span>';
 
+            row.title = isDone ? '点击取消归纳' : '点击归纳此节点';
             row.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (n.locked) return;
                 const chkEl = q('ni-pop-chk' + gi);
-                if (chkEl && chkEl.contains(e.target) && isActive) {
-                    // 调主插件归档函数：写 S.tbNodeDone、触发推进提示词
-                    if (typeof window.niTbToggleCheck === 'function') {
-                        window.niTbToggleCheck(gi).then(() => {
-                            // 归档完成后刷新弹窗节点列表
-                            niPopRender();
-                        });
-                    } else {
-                        // fallback：兼容旧版
-                        n.done = !n.done;
-                        chkEl.classList.toggle('checked', n.done);
-                        chkEl.textContent = n.done ? '✔' : '';
-                        row.classList.toggle('is-done', n.done);
-                        niPopSyncFt(nodes);
-                        if (typeof saveSettingsDebounced === 'function') saveSettingsDebounced();
-                    }
+                if (typeof window.niTbToggleCheck === 'function') {
+                    window.niTbToggleCheck(gi).then(() => {
+                        niPopRender();
+                    }).catch(e => console.warn('[NI] 弹窗节点归纳切换失败:', e));
                     return;
                 }
-                if (gi !== _popCurIdx) {
-                    if (typeof window.niTbSetCurrentIdx === 'function') window.niTbSetCurrentIdx(gi, nodes, { persist: true });
-                    _popCurIdx = gi;
-                    niPopRender();
-                }
+                // fallback：兼容旧版
+                n.done = !n.done;
+                chkEl?.classList.toggle('checked', n.done);
+                if (chkEl) chkEl.textContent = n.done ? '✔' : '';
+                row.classList.toggle('is-done', n.done);
+                niPopSyncFt(nodes);
+                if (typeof saveSettingsDebounced === 'function') saveSettingsDebounced();
             });
 
             g.appendChild(row);
