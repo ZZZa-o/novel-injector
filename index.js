@@ -659,7 +659,9 @@ const DEFAULT_SETTINGS = {
     chunkKb: 100,
     apiTimeoutMin: 15,  // 每段 API 请求超时时间（分钟）
     apiRateLimit: 3,    // 每分钟最多请求次数（0=不限）
+    apiConcurrency: 1,  // 1=串行；>1=最大并发请求数；0按串行兼容
     vecRateLimit: 3,    // 向量化每分钟最多请求次数（0=不限）
+    vecConcurrency: 1,  // 1=串行；>1=最大并发请求数；0按串行兼容
     pluginEnabled: true,  // 插件总开关
     themePreset: 'default',
     themePrimary: NI_THEME_DEFAULT.primary,
@@ -1579,7 +1581,9 @@ function niSaveSettings() {
     cfg.globalTailInjRole = niCfgInt('#ni-global-tail-inj-role', DEFAULT_SETTINGS.globalTailInjRole);
     cfg.apiTimeoutMin = Math.max(1, parseInt(q('#ni-api-timeout')?.value) || DEFAULT_SETTINGS.apiTimeoutMin);
     cfg.apiRateLimit  = Math.max(0, parseInt(q('#ni-rate-limit')?.value) ?? DEFAULT_SETTINGS.apiRateLimit);
+    cfg.apiConcurrency = niCfgBoundInt('#ni-api-concurrency', DEFAULT_SETTINGS.apiConcurrency, 0, 99);
     cfg.vecRateLimit  = Math.max(0, parseInt(q('#ni-vec-rate-limit')?.value) ?? DEFAULT_SETTINGS.vecRateLimit);
+    cfg.vecConcurrency = niCfgBoundInt('#ni-vec-concurrency', DEFAULT_SETTINGS.vecConcurrency, 0, 99);
     // 持久化运行时数据（重数据已卸载到服务端文件，此处只存轻量索引）
     cfg._stageStates   = S.stageStates;
     cfg._stageSummaries= S.stageSummaries;
@@ -1691,7 +1695,9 @@ function syncSettingsToUI() {
     sv('#ni-chunk-kb',     cfg.chunkKb     ?? DEFAULT_SETTINGS.chunkKb);
     sv('#ni-api-timeout',  cfg.apiTimeoutMin ?? DEFAULT_SETTINGS.apiTimeoutMin);
     sv('#ni-rate-limit',   cfg.apiRateLimit  ?? DEFAULT_SETTINGS.apiRateLimit);
+    sv('#ni-api-concurrency', cfg.apiConcurrency ?? DEFAULT_SETTINGS.apiConcurrency);
     sv('#ni-vec-rate-limit', cfg.vecRateLimit ?? DEFAULT_SETTINGS.vecRateLimit);
+    sv('#ni-vec-concurrency', cfg.vecConcurrency ?? DEFAULT_SETTINGS.vecConcurrency);
     niSyncThemeUI();
     niApplyCurrentTheme();
     const ptEl = q('#ni-pt-content');
@@ -2086,12 +2092,14 @@ function setChunkStat(i, st) {
 // ============================================================
 // 并发信号量 — 限制同时进行的 API 请求数，防止触发并发限制
 // ============================================================
-const ApiSemaphore = (() => {
+function niConcurrencyLimit(value, fallback = 0) {
+    const raw = parseInt(value ?? fallback, 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : 1;
+}
+
+function niCreateSemaphore(getLimit) {
     let running = 0;
     const queue = [];
-    function getLimit() {
-        return parseInt(extension_settings[EXT_NAME]?.apiConcurrency ?? 1, 10) || 1;
-    }
     function tryNext() {
         if (!queue.length) return;
         if (running >= getLimit()) return;
@@ -2109,12 +2117,26 @@ const ApiSemaphore = (() => {
             tryNext();
         },
     };
-})();
+}
+
+const ApiSemaphore = niCreateSemaphore(() =>
+    niConcurrencyLimit(extension_settings[EXT_NAME]?.apiConcurrency, DEFAULT_SETTINGS.apiConcurrency)
+);
+
+const VecSemaphore = niCreateSemaphore(() =>
+    niConcurrencyLimit(extension_settings[EXT_NAME]?.vecConcurrency, DEFAULT_SETTINGS.vecConcurrency)
+);
 
 async function withSemaphore(fn) {
     await ApiSemaphore.acquire();
     try { return await fn(); }
     finally { ApiSemaphore.release(); }
+}
+
+async function withVecSemaphore(fn) {
+    await VecSemaphore.acquire();
+    try { return await fn(); }
+    finally { VecSemaphore.release(); }
 }
 
 function niNormalizeGlobalPromptSource(value) {
@@ -7194,6 +7216,23 @@ window.niGoPlot = niGoPlot;
 // ============================================================
 // 向量化
 // ============================================================
+function niVectorConcurrencyLimit() {
+    return niConcurrencyLimit(extension_settings[EXT_NAME]?.vecConcurrency, DEFAULT_SETTINGS.vecConcurrency);
+}
+
+async function niRunVectorItems(items, worker) {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) return;
+    const workerCount = Math.min(niVectorConcurrencyLimit(), list.length);
+    let next = 0;
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+        while (next < list.length) {
+            const index = next++;
+            await worker(list[index], index);
+        }
+    }));
+}
+
 async function niStartVec() {
     if (!S.cleanDone) return;
     const cfg = extension_settings[EXT_NAME];
@@ -7326,21 +7365,21 @@ async function niStartVec() {
     for (const si of stageIdxList) {
         if (titleNote2) titleNote2.textContent = `正在向量化第 ${si}/${stageN} 阶段…`;
         const items = stageBuckets[si];
-        for (let ci = 0; ci < items.length; ci++) {
+        await niRunVectorItems(items, async (rawItem, ci) => {
             try {
-                const item = typeof items[ci] === 'string' ? { text: items[ci], sourceChunkIdx: ci } : items[ci];
+                const item = typeof rawItem === 'string' ? { text: rawItem, sourceChunkIdx: ci } : rawItem;
                 const vec = await embedText(item.text);
                 await dbSaveChunk(si, ci, vec, item.text, { sourceChunkIdx: item.sourceChunkIdx });
             } catch (e) {
                 console.error(`[NI] 向量化失败 stage=${si} chunk=${ci}:`, e);
                 stageFailCount[si] = (stageFailCount[si] || 0) + 1;
                 stageErrorMsgs[si] = e.message || String(e);
-                const item = typeof items[ci] === 'string' ? { text: items[ci], sourceChunkIdx: ci } : items[ci];
+                const item = typeof rawItem === 'string' ? { text: rawItem, sourceChunkIdx: ci } : rawItem;
                 _failedChunks.push({ si, ci, text: item.text, sourceChunkIdx: item.sourceChunkIdx });
             }
             totalDone++;
             if (titleBar2) titleBar2.style.width = `${Math.round((totalDone / totalChunks) * 95)}%`;
-        }
+        });
     }
 
     if (titleBar2) { titleBar2.style.width = '100%'; titleBar2.classList.add('g'); }
@@ -7477,7 +7516,7 @@ async function niVecFillMissing() {
     const stillFailed = [];
     const stageFailCount2 = {};
 
-    for (const { si, ci, text, sourceChunkIdx } of missingChunks) {
+    await niRunVectorItems(missingChunks, async ({ si, ci, text, sourceChunkIdx }) => {
         try {
             const vec = await embedText(text);
             await dbSaveChunk(si, ci, vec, text, { sourceChunkIdx: sourceChunkIdx ?? ci });
@@ -7488,7 +7527,7 @@ async function niVecFillMissing() {
         }
         done++;
         if (titleBar2) titleBar2.style.width = `${Math.round((done / missingChunks.length) * 95)}%`;
-    }
+    });
 
     if (titleBar2) { titleBar2.style.width = '100%'; titleBar2.classList.add('g'); }
     S._vecFailedChunks = stillFailed;
@@ -7559,7 +7598,7 @@ async function embedText(text) {
     const endpoint = `${base}/embeddings`;
 
     await _vecQueue.acquire();
-    return withSemaphore(async () => {
+    return withVecSemaphore(async () => {
         const resp = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -7727,7 +7766,7 @@ async function recallRelevantWeighted(weightedQueries, stageList, opts = {}) {
     try {
         const base = (cfg.vecUrl || '').replace(/\/+$/, '').replace(/\/embeddings$/, '');
         await _vecQueue.acquire();
-        const resp = await withSemaphore(async () => fetch(`${base}/embeddings`, {
+        const resp = await withVecSemaphore(async () => fetch(`${base}/embeddings`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.vecKey}` },
             body: JSON.stringify({ model: cfg.vecModel, input: inputs }),
@@ -10301,7 +10340,9 @@ jQuery(async () => {
     $app.on('input', '#ni-chunk-kb', () => niOnKbChange());
     $app.on('input', '#ni-api-timeout', () => niSaveSettings());
     $app.on('input', '#ni-rate-limit',   () => { niSaveSettings(); _apiQueue.maxPerMin = Math.max(0, parseInt(q('#ni-rate-limit')?.value) || 0); });
+    $app.on('input', '#ni-api-concurrency', () => niSaveSettings());
     $app.on('input', '#ni-vec-rate-limit', () => { niSaveSettings(); _vecQueue.maxPerMin = Math.max(0, parseInt(q('#ni-vec-rate-limit')?.value) || 0); });
+    $app.on('input', '#ni-vec-concurrency', () => niSaveSettings());
 
     // 流式开关
     $app.on('change', '#ni-clean-stream', function() {
