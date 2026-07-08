@@ -68,51 +68,8 @@
   filter: none !important;
 }
 
-/* 防止字体美化插件把图标字体替换成正文字体。 */
-.ni-app .ti,
-#ni-storybar .ti {
-  font-family: "tabler-icons" !important;
-  speak: none;
-  font-style: normal !important;
-  font-weight: normal !important;
-  font-variant: normal;
-  line-height: 1;
-  text-transform: none;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-.ni-app .ti::before,
-#ni-storybar .ti::before {
-  font-family: "tabler-icons" !important;
-}
-
-#ni_drawer_icon.drawer-icon.fa-solid,
-#ni_drawer_icon.drawer-icon.fa-solid::before,
-#ni-toggle-topbar-icon .fa-solid,
-#ni-toggle-topbar-icon .fa-solid::before {
-  font-family: "Font Awesome 6 Free", "Font Awesome 6 Pro", "Font Awesome 5 Free", FontAwesome !important;
-  font-weight: 900 !important;
-  font-style: normal !important;
-}
-
-#ni-toggle-topbar-icon .ni-ext-menu-state {
-  margin-left: auto;
-  min-width: 16px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--SmartThemeQuoteColor, var(--SmartThemeEmColor, currentColor));
-  text-align: right;
-}
-
-#ni-toggle-topbar-icon.ni-topbar-icon-off {
-  opacity: .72;
-}
-
 .ni-app.ni-ali-icons .ti,
-.ni-app.ni-ali-icons .ti::before,
-.ni-ali-icons #ni-storybar .ti,
-.ni-ali-icons #ni-storybar .ti::before {
+.ni-ali-icons #ni-storybar .ti {
   font-family: "NI-AliIcon" !important;
   font-style: normal;
   font-weight: normal;
