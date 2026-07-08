@@ -1780,7 +1780,11 @@ function niSyncTopbarIconVisibility() {
     const enabled = niTopbarIconVisible();
     const drawer = q('#ni_drawer');
     if (drawer) {
-        if (!enabled) niCloseTopbarDrawer();
+        if (!enabled) {
+            niCloseTopbarDrawer();
+        } else {
+            q('#ni_drawer_content')?.style.removeProperty('display');
+        }
         drawer.style.display = enabled ? '' : 'none';
     }
     niSyncExtensionsMenuTopbarToggle();
