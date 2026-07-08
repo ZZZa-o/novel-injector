@@ -9,9 +9,9 @@
 }
 
 /* ============================================
-   Novel Injector - Style
-   All selectors prefixed with .ni- to avoid conflicts
-   ============================================ */
+ Novel Injector - Style
+ All selectors prefixed with.ni- to avoid conflicts
+ ============================================*/
 
 .ni-app {
   font-family: var(--font-sans, sans-serif);
@@ -68,8 +68,48 @@
   filter: none !important;
 }
 
+/* 防止字体美化插件把图标字体替换成正文字体。*/
+.ni-app .ti,
+.ni-app .ti::before,
+#ni-storybar .ti,
+#ni-storybar .ti::before {
+  font-family: "tabler-icons" !important;
+  speak: none;
+  font-style: normal !important;
+  font-weight: normal !important;
+  font-variant: normal;
+  line-height: 1;
+  text-transform: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#ni_drawer_icon.drawer-icon.fa-solid,
+#ni_drawer_icon.drawer-icon.fa-solid::before,
+#ni-toggle-topbar-icon .fa-solid,
+#ni-toggle-topbar-icon .fa-solid::before {
+  font-family: "Font Awesome 6 Free", "Font Awesome 6 Pro", "Font Awesome 5 Free", FontAwesome !important;
+  font-weight: 900 !important;
+  font-style: normal !important;
+}
+
+#ni-toggle-topbar-icon .ni-ext-menu-state {
+  margin-left: auto;
+  min-width: 16px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--SmartThemeQuoteColor, var(--SmartThemeEmColor, currentColor));
+  text-align: right;
+}
+
+#ni-toggle-topbar-icon.ni-topbar-icon-off {
+  opacity: .72;
+}
+
 .ni-app.ni-ali-icons .ti,
-.ni-ali-icons #ni-storybar .ti {
+.ni-app.ni-ali-icons .ti::before,
+.ni-ali-icons #ni-storybar .ti,
+.ni-ali-icons #ni-storybar .ti::before {
   font-family: "NI-AliIcon" !important;
   font-style: normal;
   font-weight: normal;
@@ -84,7 +124,7 @@
   display: inline-block;
 }
 
-/* 阿里 iconfont 替换：按插件标题/按钮语义映射常用 Tabler 图标。 */
+/* 阿里 iconfont 替换：按插件标题/按钮语义映射常用 Tabler 图标。*/
 .ni-app.ni-ali-icons .ti-check::before,
 .ni-ali-icons #ni-storybar .ti-check::before { content: "\e632"; }
 .ni-app.ni-ali-icons .ti-x::before,
@@ -263,11 +303,11 @@
   padding: 10px 10px 0;
 }
 
-/* ---- Pages ---- */
+/* ---- Pages ----*/
 .ni-page { display: none; flex-direction: column; gap: 10px; padding-bottom: 10px; }
 .ni-page.on { display: flex; }
 
-/* ---- Card ---- */
+/* ---- Card ----*/
 .ni-card {
   background: var(--color-background-primary);
   border: .5px solid var(--color-border-tertiary);
@@ -335,7 +375,7 @@
   outline-color: var(--ni-primary, #A0445E) !important;
 }
 
-/* ---- Card Title ---- */
+/* ---- Card Title ----*/
 .ni-ctitle {
   font-size: 11px;
   font-weight: 500;
@@ -358,7 +398,7 @@
   color: var(--color-text-tertiary);
 }
 
-/* ---- Fields ---- */
+/* ---- Fields ----*/
 .ni-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
 .ni-field:last-child { margin-bottom: 0; }
 .ni-field label { font-size: 12px; color: var(--color-text-secondary); }
@@ -533,7 +573,7 @@
   cursor: not-allowed;
 }
 
-/* ---- Buttons ---- */
+/* ---- Buttons ----*/
 .ni-btn {
   width: 100%;
   padding: 9px;
@@ -562,8 +602,8 @@
 #ni-btn-dev.loading .ti-analyze { display: none !important; }
 .ni-btn-ghost { color: var(--color-text-secondary); }
 .ni-btn-ghost:hover:not(:disabled) { background: var(--color-background-secondary); }
-/* ---- 清洗控制行（跳过 / 暂停 / 超时） ---- */
-/* ---- 清洗运行态控制按钮（在 tool-row 中替换主按钮） ---- */
+/* ---- 清洗控制行 ----*/
+/* ---- 清洗运行态控制按钮 ----*/
 .ni-ctrl-btn {
   display: inline-flex;
   align-items: center;
@@ -577,7 +617,7 @@
   cursor: pointer;
   transition: background .15s, color .15s, border-color .15s;
   white-space: nowrap;
-  /* 与 ni-btn-inline 对齐 */
+  /* 与 ni-btn-inline 对齐*/
   flex: 1;
   min-width: 80px;
   min-height: 34px;
@@ -587,7 +627,7 @@
 }
 .ni-ctrl-btn i { font-size: 14px; }
 .ni-ctrl-btn:active { opacity: .75; }
-/* 跳过：粉色主题，与插件主色系一致 */
+/* 跳过：粉色主题，与插件主色系一致*/
 .ni-ctrl-skip {
   color: var(--ni-primary, #A0445E);
   border-color: var(--ni-primary-alpha-40, rgba(194,24,91,.4));
@@ -597,7 +637,7 @@
   background: var(--ni-primary-alpha-15, rgba(194,24,91,.15));
   border-color: var(--ni-primary, #A0445E);
 }
-/* 补全缺失：同暂停 */
+/* 补全缺失：同暂停*/
 .ni-ctrl-fill {
   color: var(--color-text-secondary);
   border-color: var(--color-border-secondary);
@@ -605,7 +645,7 @@
 .ni-ctrl-fill:hover {
   color: var(--color-text-primary);
 }
-/* 暂停：低调灰 */
+/* 暂停：低调灰*/
 .ni-ctrl-pause {
   color: var(--color-text-secondary);
   border-color: var(--color-border-secondary);
@@ -614,7 +654,7 @@
   background: var(--color-background-secondary);
   color: var(--color-text-primary);
 }
-/* ---- 设置面板内 超时 + 流式 同行布局 ---- */
+/* ---- 设置面板内 超时 + 流式 同行布局 ----*/
 .ni-stream-timeout-row {
   display: flex;
   align-items: center;
@@ -692,12 +732,12 @@
 }
 #ni-dev-cfg-btn { margin-left: auto; }
 
-/* ---- Tool Row ---- */
+/* ---- Tool Row ----*/
 .ni-tool-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .ni-tool-label { font-size: 12px; color: var(--color-text-secondary); }
 .ni-tool-unit { font-size: 12px; color: var(--color-text-tertiary); }
 
-/* 内联在 tool-row 里的主操作按钮 */
+/* 内联在 tool-row 里的主操作按钮*/
 .ni-btn-inline {
   flex: 1 1 0;
   width: auto;
@@ -708,7 +748,7 @@
   padding: 0 10px;
 }
 
-/* 向量化标题行备注 */
+/* 向量化标题行备注*/
 .ni-vec-hint-inline {
   font-size: 11px;
   color: var(--color-text-tertiary);
@@ -732,11 +772,11 @@
 }
 .ni-kb-inp:focus { outline: none; border-color: var(--ni-primary-focus, #B8336A); }
 
-/* ---- API Panel ---- */
+/* ---- API Panel ----*/
 .ni-api-panel { display: none; margin-bottom: 10px; padding: 10px; border: .5px solid var(--color-border-tertiary); border-radius: 4px; background: var(--color-background-secondary); }
 .ni-api-panel.on { display: block; }
 
-/* ---- Prompt Box ---- */
+/* ---- Prompt Box ----*/
 .ni-prompt-box { display: none; margin-bottom: 10px; }
 .ni-prompt-box.on { display: block; }
 .ni-global-source-row {
@@ -937,10 +977,10 @@
   border-color: var(--ni-primary-focus, #B8336A);
 }
 
-/* ---- Progress (底部旧版已废弃，使用标题行内进度条) ---- */
+/* ---- Progress ----*/
 
 
-/* ---- Upload Zone ---- */
+/* ---- Upload Zone ----*/
 .ni-upload-panel {
   background: var(--color-background-secondary);
   border-radius: 4px;
@@ -971,7 +1011,7 @@
 .ni-u-ok { font-size: 12px; color: var(--ni-success-text, #0F6E56); font-weight: 500; display: none; align-items: center; justify-content: center; gap: 5px; margin: 2px 0 10px; }
 .ni-u-ok i { font-size: 14px; }
 
-/* ---- Stats ---- */
+/* ---- Stats ----*/
 .ni-stat-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; border-top: .5px solid var(--color-border-tertiary); padding-top: 10px; margin-bottom: 10px; }
 .ni-stat-card { background: transparent; border-radius: 0; padding: 2px 12px 0; min-width: 0; }
 .ni-stat-card + .ni-stat-card { border-left: .5px solid var(--color-border-tertiary); }
@@ -984,7 +1024,7 @@
 .ni-kb-inp-stat::-webkit-outer-spin-button, .ni-kb-inp-stat::-webkit-inner-spin-button { -webkit-appearance: none; }
 .ni-stat-kb-unit { font-size: 12px; color: var(--color-text-tertiary); }
 
-/* ---- Chunk List ---- */
+/* ---- Chunk List ----*/
 .ni-chunk-list { display: flex; flex-direction: column; gap: 5px; max-height: 150px; overflow-y: auto; }
 .ni-chunk-row { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: .5px solid var(--color-border-tertiary); border-radius: 4px; background: var(--color-background-secondary); flex-shrink: 0; }
 .ni-chunk-run-btn { margin-left: auto; flex-shrink: 0; font-size: 11px; padding: 2px 8px; border-radius: 4px; border: .5px solid var(--color-border-secondary); background: transparent; color: var(--color-text-secondary); cursor: pointer; transition: background .12s, color .12s; white-space: nowrap; }
@@ -997,25 +1037,25 @@
 .ni-cs-d { background: var(--ni-success-soft, #E1F5EE); color: var(--ni-success-text, #0F6E56); }
 .ni-cs-e { background: var(--ni-pivot-soft, #FCF7FB); color: var(--ni-pivot-text, #7C5071); }
 
-/* ---- Hint Box ---- */
+/* ---- Hint Box ----*/
 .ni-hint-box { background: var(--color-background-secondary); border-radius: 4px; padding: 9px 11px; font-size: 12px; color: var(--color-text-secondary); line-height: 1.6; margin-bottom: 10px; }
 .ni-hint-box i { font-size: 13px; vertical-align: -1px; margin-right: 4px; color: var(--color-text-tertiary); }
 
-/* ---- Desc ---- */
+/* ---- Desc ----*/
 .ni-desc { font-size: 12px; color: var(--color-text-secondary); line-height: 1.65; margin-bottom: 10px; }
 
-/* ---- Tabs ---- */
+/* ---- Tabs ----*/
 .ni-tab-row { display: flex; gap: 4px; margin-bottom: 10px; }
-/* 剧情tab行右侧操作按钮 */
+/* 剧情tab行右侧操作按钮*/
 .ni-plot-tab-row { align-items: center; }
 .ni-plot-tab-actions { margin-left: auto; display: flex; gap: 4px; }
 .ni-plot-tab-actions .ni-char-edit-btn { padding: 2px 3px; }
-/* 删除模式：事件卡可选中 */
+/* 删除模式：事件卡可选中*/
 .ni-plot-del-mode .ni-plot-item,
 .ni-plot-del-mode .ni-tl-item { cursor: pointer; outline: 2px dashed var(--ni-primary-border, #DDB5C0); outline-offset: 2px; border-radius: 6px; }
 .ni-plot-del-mode .ni-plot-item.ni-plot-selected,
 .ni-plot-del-mode .ni-tl-item.ni-plot-selected { outline-color: var(--ni-primary, #A0445E); background: var(--ni-primary-soft-2, #FBF2F6); }
-/* 编辑模式：事件卡右上角显示编辑图标 */
+/* 编辑模式：事件卡右上角显示编辑图标*/
 .ni-plot-edit-mode .ni-plot-item,
 .ni-plot-edit-mode .ni-tl-item { cursor: pointer; outline: none; border-radius: 6px; }
 .ni-plot-edit-mode .ni-plot-item,
@@ -1046,7 +1086,7 @@
 .ni-tp { display: none; }
 .ni-tp.on { display: block; }
 
-/* ---- Plot Items ---- */
+/* ---- Plot Items ----*/
 .ni-plot-item { border: .5px solid var(--color-border-tertiary); border-radius: 4px; overflow: hidden; margin-bottom: 6px; position: relative; transition: background .14s, border-color .14s, box-shadow .14s, transform .14s, opacity .14s; }
 .ni-plot-item:last-child { margin-bottom: 0; }
 .ni-tp .ni-plot-item { background: var(--ni-plot-node-bg, var(--color-background-primary)); }
@@ -1091,13 +1131,13 @@
 .ni-sub-row { padding: 5px 8px; border-left: 2px solid var(--ni-success-border, #5DCAA5); font-size: 12px; color: var(--color-text-secondary); display: flex; align-items: flex-start; gap: 6px; line-height: 1.5; background: var(--color-background-secondary); }
 .ni-sub-row i { font-size: 12px; color: var(--ni-success, #1D9E75); flex-shrink: 0; margin-top: 1px; }
 
-/* ---- Badge ---- */
+/* ---- Badge ----*/
 .ni-badge { font-size: 10px; font-weight: 500; padding: 2px 7px; border-radius: 10px; flex-shrink: 0; }
 .ni-bp { background: var(--ni-primary-soft, #F5E6EC); color: var(--ni-primary-soft-text, #8B3A50); }
 .ni-bt { background: var(--ni-success-soft, #E1F5EE); color: var(--ni-success-text, #0F6E56); }
 .ni-bc { background: var(--ni-pivot-soft, #FCF7FB); color: var(--ni-pivot-text, #7C5071); }
 
-/* ---- Deviation Panel ---- */
+/* ---- Deviation Panel ----*/
 .ni-dev-wrap { border: .5px solid #EF9F27; border-radius: 4px; background: #FAEEDA; padding: 11px; margin-top: 10px; }
 .ni-dev-ttl { font-size: 12px; font-weight: 500; color: #633806; margin-bottom: 9px; display: flex; align-items: center; gap: 5px; }
 .ni-dev-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
@@ -1108,8 +1148,8 @@
 .ni-dev-note { font-size: 12px; color: #854F0B; line-height: 1.6; margin-top: 7px; }
 .ni-dev-note:empty { display: none; }
 
-/* ---- Character Cards ---- */
-.ni-char-card-legacy-reset { /* merged into new .ni-char-card below */ }
+/* ---- Character Cards ----*/
+.ni-char-card-legacy-reset { /* merged into new.ni-char-card below*/ }
 .ni-char-card:last-child { margin-bottom: 0; }
 .ni-char-head { display: flex; align-items: center; gap: 9px; margin-bottom: 7px; }
 .ni-char-av { width: 36px; height: 36px; border-radius: 50%; background: var(--ni-primary-soft, #F5E6EC); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; color: var(--ni-primary-soft-text, #8B3A50); flex-shrink: 0; }
@@ -1139,13 +1179,13 @@
 .ni-char-stage-tag { display: inline-flex; align-items: center; margin-top: 3px; padding: 1px 7px; border-radius: 20px; border: 1px solid var(--color-border-secondary); background: transparent; font-size: 11px; color: var(--color-text-secondary); cursor: pointer; transition: background .15s, color .15s; }
 .ni-char-stage-tag:hover { background: var(--ni-primary-soft, #F5E6EC); color: var(--ni-primary-soft-text, #8B3A50); border-color: var(--ni-primary-border, #DDB5C0); }
 .ni-char-bio { font-size: 12px; color: var(--color-text-secondary); line-height: 1.65; margin-bottom: 7px; }
-/* old .ni-char-edit-btn neutralized — see new rules below */
+/* old.ni-char-edit-btn neutralized — see new rules below*/
 .ni-char-textarea { display: none; }
 .ni-char-save-btn { font-size: 12px; padding: 4px 11px; background: var(--ni-primary, #A0445E); color: var(--ni-primary-on, #F5E6EC); border: none; border-radius: 4px; cursor: pointer; display: none; }
 .ni-cef-save-row { display: flex; justify-content: flex-end; margin-top: 0; }
 .ni-cef-select { cursor: pointer; min-width: 56px; }
 
-/* 四字段编辑表单 */
+/* 四字段编辑表单*/
 .ni-char-edit-form { display: none; margin-top: 6px; }
 .ni-cef-field { margin-bottom: 8px; }
 .ni-cef-field:last-child { margin-bottom: 0; }
@@ -1171,7 +1211,7 @@
 .ni-cef-ta::placeholder { color: var(--SmartThemeEmColor); opacity: 0.5; }
 .ni-cef-ta:focus { border-color: var(--ni-primary, #A0445E); }
 
-/* ---- Stage Items ---- */
+/* ---- Stage Items ----*/
 .ni-stage-item { border: .5px solid var(--color-border-tertiary); border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
 .ni-stage-item:last-child { margin-bottom: 0; }
 .ni-stage-head {
@@ -1214,24 +1254,24 @@
 .ni-np-pivot { background: var(--ni-pivot-soft, #FCF7FB); color: var(--ni-pivot-text, #7C5071); }
 .ni-np-pivot:hover { background: var(--ni-pivot-hover, #F2DAEB); }
 .ni-np-pivot.ni-pill-active { background: var(--ni-pivot-text, #7C5071); color: #fff; }
-/* Inline node preview panel — base */
+/* Inline node preview panel — base*/
 .ni-pill-inline-nodes { margin-top: 5px; padding: 5px 8px 6px; border-radius: 6px; display: block; width: 100%; box-sizing: border-box; grid-column: 2 / -1; }
 .ni-pin-label { font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; margin-bottom: 4px; opacity: .7; }
 .ni-pin-row { display: flex; align-items: center; gap: 6px; padding: 3px 6px; margin: 1px 0; border-radius: 4px; font-size: 12px; cursor: pointer; transition: background .12s; width: 100%; box-sizing: border-box; }
 .ni-pin-icon { font-size: 11px; flex-shrink: 0; }
 .ni-pin-title { flex: 1; min-width: 0; white-space: normal; word-break: break-all; line-height: 1.4; }
 .ni-pin-loc { font-size: 10px; flex-shrink: 0; white-space: nowrap; opacity: .65; }
-/* Main (pink) theme */
+/* Main theme*/
 .ni-pill-inline-nodes:has(.ni-pin-type-main) { background: #FAF1F4; }
 .ni-pin-type-main .ni-pin-icon { color: #E91E63; }
 .ni-pin-type-main { color: #7B1038; }
 .ni-pin-type-main:hover { background: #FACDD8; }
-/* Sub (green) theme */
+/* Sub theme*/
 .ni-pill-inline-nodes:has(.ni-pin-type-sub) { background: var(--ni-success-soft-2, #EEF9F5); }
 .ni-pin-type-sub .ni-pin-icon { color: var(--ni-success, #14855E); }
 .ni-pin-type-sub { color: var(--ni-success-text, #0B4D39); }
 .ni-pin-type-sub:hover { background: var(--ni-success-hover, #C5EAD9); }
-/* Pivot (orange) theme */
+/* Pivot theme*/
 .ni-pill-inline-nodes:has(.ni-pin-type-pivot) { background: var(--ni-pivot-soft-2, #FDFAFD); }
 .ni-pin-type-pivot .ni-pin-icon { color: var(--ni-pivot, #D68AC2); }
 .ni-pin-type-pivot { color: var(--ni-pivot-text, #7C5071); }
@@ -1241,17 +1281,17 @@
 
 
 
-/* ---- Empty State ---- */
+/* ---- Empty State ----*/
 .ni-empty { text-align: center; padding: 22px 16px; color: var(--color-text-tertiary); font-size: 13px; }
 .ni-empty i { font-size: 26px; display: block; margin-bottom: 7px; }
 
-/* ---- Bottom Nav ---- */
+/* ---- Bottom Nav ----*/
 .ni-btm-nav { display: flex; border-top: .5px solid var(--color-border-tertiary); background: var(--color-background-primary); flex-shrink: 0; }
 .ni-nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 9px 4px; cursor: pointer; border: none; background: transparent; color: var(--color-text-tertiary); font-size: 10px; min-height: 50px; transition: color .15s; font-family: var(--font-sans, sans-serif); }
 .ni-nav-btn.on { color: var(--ni-primary, #A0445E); }
 .ni-nav-btn i { font-size: 19px; }
 
-/* 注入设置折叠标题 */
+/* 注入设置折叠标题*/
 .ni-ctitle-toggle {
   cursor: pointer;
   display: flex;
@@ -1270,13 +1310,13 @@
 }
 .ni-inj-body { margin-top: 8px; }
 .ni-inj-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
-/* Accordion header */
+/* Accordion header*/
 .ni-inj-acc-header { display: flex; align-items: center; padding: 9px 12px; cursor: pointer; user-select: none; }
 .ni-inj-acc-left { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: var(--color-text-primary); }
 .ni-inj-acc-left > i:first-child { font-size: 15px; color: var(--ni-primary, #A0445E); }
 .ni-inj-acc-chevron { font-size: 13px; color: var(--color-text-secondary, #888); transition: transform .22s cubic-bezier(.4,0,.2,1); }
 .ni-inj-acc-header.open .ni-inj-acc-chevron { transform: rotate(180deg); }
-/* Accordion panel — no background, no separator */
+/* Accordion panel — no background, no separator*/
 .ni-inj-panel { display: none; padding: 4px 12px 13px; }
 .ni-inj-panel.open { display: block; }
 .ni-inj-subtitle {
@@ -1292,11 +1332,11 @@
 .ni-inj-panel .ni-field input:focus,
 .ni-inj-panel .ni-field select:focus { border-color: var(--ni-primary-focus, #B8336A); outline: none; }
 
-/* 标题行：有进度时去掉底部 margin，进度条贴底 */
+/* 标题行：有进度时去掉底部 margin，进度条贴底*/
 .ni-ctitle { display: flex; align-items: center; gap: 6px; position: relative; }
 .ni-ctitle-label { display: flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 0; }
 
-/* 右侧进度区：纵向排列，文字居中在上，进度条贴底 */
+/* 右侧进度区：纵向排列，文字居中在上，进度条贴底*/
 .ni-ctitle-prog {
   display: flex;
   flex-direction: column;
@@ -1330,12 +1370,12 @@
 }
 .ni-ctitle-prog-bar.g { background: var(--ni-success, #1D9E75); }
 
-/* 有进度时卡片去掉底部 padding，进度条紧贴底边 */
+/* 有进度时卡片去掉底部 padding，进度条紧贴底边*/
 .ni-card.ni-has-prog { padding-bottom: 0; }
-/* 有进度时隐藏 hint，防止换行 */
+/* 有进度时隐藏 hint，防止换行*/
 #ni-vp-card.ni-has-prog .ni-vec-hint-inline { display: none; }
 
-/* 模型行：外层横排，input-wrap 占满，按钮固定右侧 */
+/* 模型行：外层横排，input-wrap 占满，按钮固定右侧*/
 .ni-model-field-wrap {
   display: flex;
   align-items: center;
@@ -1354,18 +1394,18 @@
 .ni-model-select { margin-top: 0; }
 .ni-model-refresh-btn { flex-shrink: 0; }
 
-/* 手机端：收紧图标按钮间距 */
+/* 手机端：收紧图标按钮间距*/
 .ni-tool-row { gap: 4px; flex-wrap: wrap; }
 .ni-icon-btn { padding: 4px 6px; min-width: 28px; }
 
-/* 底栏导航手机端收紧 */
+/* 底栏导航手机端收紧*/
 .ni-btm-nav { gap: 0; }
 .ni-nav-btn { padding: 8px 4px; flex: 1; font-size: 11px; }
 .ni-nav-btn i { font-size: 16px; display: block; margin-bottom: 2px; }
 
 /* ============================================================
-   阶段划分面板
-   ============================================================ */
+ 阶段划分面板
+ ============================================================*/
 .ni-stage-map-btn {
   margin-left: 8px;
   display: inline-flex;
@@ -1631,7 +1671,7 @@
 .ni-sp-confirm-btn:hover { background: var(--ni-primary, #A0445E); }
 .ni-sp-confirm-btn i { font-size: 13px; }
 
-/* ── 右上角 AI 生成按钮 ─────────────────────────────── */
+/* ── 右上角 AI 生成按钮 ───────────────────────────────*/
 .ni-ctitle {
   display: flex;
   align-items: center;
@@ -1674,7 +1714,7 @@
   color: #fff;
 }
 
-/* ── 流式输出原生复选框（右上角定位） ───────────────── */
+/* ── 流式输出原生复选框 ─────────────────*/
 .ni-stream-check-wrap {
   display: inline-flex;
   align-items: center;
@@ -1699,7 +1739,7 @@
   outline: none;
 }
 
-/* ── 向量化阶段选择器 ── */
+/* ── 向量化阶段选择器 ──*/
 .ni-vec-stage-selector {
   display: grid;
   grid-template-columns: 1fr;
@@ -1772,7 +1812,7 @@
   flex-shrink: 0;
 }
 
-/* ── 阶段卡片向量状态标签 ── */
+/* ── 阶段卡片向量状态标签 ──*/
 .ni-vec-status-badge {
   font-size: 10px;
   padding: 1px 6px;
@@ -1783,7 +1823,7 @@
 .ni-vsb-done { background: var(--ni-success-soft, #E1F5EE); color: var(--ni-success-text, #0F6E56); }
 .ni-vsb-none { background: var(--color-background-secondary); color: var(--color-text-tertiary); }
 
-/* ── 阶段 token 估算 ── */
+/* ── 阶段 token 估算 ──*/
 .ni-token-est {
   font-size: 10px;
   color: var(--color-text-tertiary);
@@ -1791,7 +1831,7 @@
   letter-spacing: 0.02em;
 }
 
-/* ── 角色页 + / - 按钮行 ── */
+/* ── 角色页 + / - 按钮行 ──*/
 .ni-char-pm-row {
   display: flex;
   justify-content: flex-end;
@@ -1816,14 +1856,14 @@
 }
 .ni-char-pm-btn:hover { background: var(--color-background-secondary); }
 
-/* ── 角色 Tab 行 ── */
+/* ── 角色 Tab 行 ──*/
 .ni-char-tab-row {
   display: flex;
   border-bottom: 0.5px solid var(--color-border-tertiary);
   margin-bottom: 10px;
 }
 
-/* ── 删除模式提示栏 ── */
+/* ── 删除模式提示栏 ──*/
 .ni-char-del-bar {
   display: flex;
   align-items: center;
@@ -1838,11 +1878,11 @@
 .ni-char-del-confirm { font-size: 12px; padding: 4px 10px; border: none; border-radius: 4px; background: var(--ni-primary, #A0445E); color: #fff; cursor: pointer; }
 .ni-char-del-cancel  { font-size: 12px; padding: 4px 10px; border: 0.5px solid var(--ni-primary-alpha-30, rgba(160, 68, 94, .30)); border-radius: 4px; background: transparent; color: var(--ni-primary, #A0445E); cursor: pointer; margin-right: 4px; }
 
-/* ── 删除模式卡片 ── */
+/* ── 删除模式卡片 ──*/
 .ni-char-card.ni-del-mode { outline: 2px dashed var(--ni-primary-border, #DDB5C0); outline-offset: 2px; border-color: transparent; cursor: pointer; }
 .ni-char-card.ni-del-mode.ni-plot-selected { outline: 2px dashed var(--ni-primary, #A0445E); background: var(--ni-primary-soft-2, #FBF2F6); }
 
-/* ── 添加角色弹窗 ── */
+/* ── 添加角色弹窗 ──*/
 .ni-modal-bg {
   position: absolute; inset: 0;
   background: rgba(0,0,0,0.35);
@@ -1884,7 +1924,7 @@ select.ni-modal-input {
 .ni-modal-cancel  { font-size: 12px; padding: 5px 12px; border: 0.5px solid var(--SmartThemeBorderColor); border-radius: 4px; background: var(--SmartThemeChatTintColor); cursor: pointer; color: var(--SmartThemeBodyColor); }
 .ni-modal-confirm { font-size: 12px; padding: 5px 12px; border: none; border-radius: 4px; background: var(--ni-primary, #A0445E); color: #fff; cursor: pointer; }
 
-/* 用户代入角色 */
+/* 用户代入角色*/
 .ni-user-sub-card {
   padding: 9px 13px;
 }
@@ -2198,7 +2238,7 @@ select.ni-modal-input {
   opacity: .86;
 }
 
-/* ── 角色 tab 行 + 全开/全关按钮（新紧凑工具栏） ── */
+/* ── 角色 tab 行 + 全开/全关按钮 ──*/
 .ni-char-toolbar {
   background: transparent;
   border: none;
@@ -2210,7 +2250,7 @@ select.ni-modal-input {
   margin-bottom: 8px;
 }
 
-/* 通用行 */
+/* 通用行*/
 .ni-toolbar-row { display: flex; align-items: center; gap: 6px; }
 #ni-char-bulk-row { justify-content: flex-end; }
 
@@ -2313,13 +2353,13 @@ select.ni-modal-input {
   font-size: 10px; padding: 1px 5px; border-radius: 9px; flex-shrink: 0;
   background: var(--color-background-success,#EAF3DE); color: var(--color-text-success,#3B6D11);
 }
-/* 旧 pdiv 兼容（其他地方可能还用到） */
+/* 旧 pdiv 兼容*/
 .ni-pdiv { width: 0.5px; height: 14px; background: var(--color-border-secondary); flex-shrink: 0; }
 
-/* 竖分隔线 */
+/* 竖分隔线*/
 .ni-vdiv { width: 0.5px; height: 16px; background: var(--color-border-tertiary); flex-shrink: 0; }
 
-/* 全开/全关 */
+/* 全开/全关*/
 .ni-stage-bulk-row { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
 #ni-stage-enable-all { margin-left: auto; }
 #ni-vec-off-btn { margin-left: auto; }
@@ -2336,12 +2376,12 @@ select.ni-modal-input {
 .ni-bulk-btn.off { background: var(--color-background-secondary); color: var(--color-text-secondary); }
 .ni-bulk-btn:hover { opacity: .8; }
 
-/* tab + 增删行 */
+/* tab + 增删行*/
 .ni-tabs-row { display: flex; align-items: center; gap: 6px; }
 .ni-tabs-row .ni-tab-row { flex: 1; margin-bottom: 0; }
 .ni-pm-group { display: flex; gap: 4px; flex-shrink: 0; }
 
-/* ── 角色卡三列布局 ── */
+/* ── 角色卡三列布局 ──*/
 .ni-char-card {
   border: .5px solid var(--color-border-tertiary);
   border-radius: 8px; padding: 10px 10px 10px 8px;
@@ -2351,12 +2391,12 @@ select.ni-modal-input {
 .ni-char-card.ni-del-mode { outline: 2px dashed var(--ni-primary-border, #DDB5C0); outline-offset: 2px; border-color: transparent; cursor: pointer; }
 .ni-char-card.ni-char-disabled { opacity: .45; }
 
-/* 顶部行：左中右三列 */
+/* 顶部行：左中右三列*/
 .ni-char-card-top {
   display: flex; gap: 8px; align-items: flex-start; width: 100%;
 }
 
-/* 左列：纯div开关，不用原生checkbox */
+/* 左列：纯div开关，不用原生checkbox*/
 .ni-char-card-left { display: flex; align-items: flex-start; justify-content: center; padding-top: 12px; flex-shrink: 0; width: 26px; }
 .ni-char-chk {
   width: 15px; height: 15px; border-radius: 4px;
@@ -2369,10 +2409,10 @@ select.ni-modal-input {
 .ni-char-chk.ni-char-chk-on { background: var(--ni-primary, #A0445E); border-color: var(--ni-primary, #A0445E); }
 .ni-char-chk.ni-char-chk-on .ni-char-chk-icon { color: var(--ni-checkbox-on, #fff); }
 
-/* 中列：内容 */
+/* 中列：内容*/
 .ni-char-card-mid { flex: 1; min-width: 0; }
 
-/* 右列：眼睛在上、编辑按钮在下 */
+/* 右列：眼睛在上、编辑按钮在下*/
 .ni-char-card-right {
   display: flex; flex-direction: column; align-items: flex-end;
   justify-content: flex-start; gap: 6px; flex-shrink: 0; padding-top: 0;
@@ -2394,7 +2434,7 @@ select.ni-modal-input {
 .ni-char-eye.on { color: var(--ni-primary, #A0445E); }
 .ni-char-eye:hover { background: var(--color-background-secondary); }
 
-/* AI人设粉色块 — 独立全宽行，在card-top之外 */
+/* AI人设粉色块 — 独立全宽行，在card-top之外*/
 .ni-char-ai-profile {
   background: var(--ni-primary-soft-2, #FBF2F6); border-radius: 6px;
   margin-top: 6px; overflow: hidden;
@@ -2413,7 +2453,7 @@ select.ni-modal-input {
 .ni-char-ai-body { }
 .ni-char-ai-profile .ni-char-eye { color: var(--ni-primary, #A0445E); margin-right: 0; }
 
-/* AI人设粉框内的四格 grid 复用 ni-af-grid，但背景/边框色调整 */
+/* AI人设粉框内的四格 grid 复用 ni-af-grid，但背景/边框色调整*/
 .ni-char-ai-profile .ni-af-grid {
   border: none;
   border-radius: 0;
@@ -2424,23 +2464,23 @@ select.ni-modal-input {
 .ni-char-ai-profile .ni-char-field:nth-child(1),
 .ni-char-ai-profile .ni-char-field:nth-child(3) { border-right: 1px dashed var(--ni-primary-border, #DDB5C0); }
 
-/* AI人设编辑区标题 */
+/* AI人设编辑区标题*/
 .ni-cef-ai-hdr {
   display: flex; align-items: center; gap: 4px;
   font-size: 11px; font-weight: 600; color: var(--ni-primary, #A0445E);
   margin-bottom: 6px; padding-top: 4px;
 }
-/* AI人设编辑区粉色背景框 */
+/* AI人设编辑区粉色背景框*/
 .ni-cef-ai-wrap {
   background: var(--ni-primary-soft-2, #FBF2F6); border: .5px solid var(--ni-primary-border, #DDB5C0);
   border-radius: 6px; padding: 8px 10px; margin-top: 4px;
 }
-/* 展示时四格布局 */
+/* 展示时四格布局*/
 .ni-af-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
 .ni-af-col  { display: contents; }
 .ni-af-item { }
 
-/* ── 角色性格标签 ── */
+/* ── 角色性格标签 ──*/
 .ni-char-personality {
   display: inline-flex;
   align-items: center;
@@ -2454,7 +2494,7 @@ select.ni-modal-input {
 }
 .ni-char-personality i { font-size: 11px; }
 
-/* ── 加载旋转动画 ── */
+/* ── 加载旋转动画 ──*/
 @keyframes ni-spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
@@ -2469,11 +2509,11 @@ select.ni-modal-input {
 }
 
 /* ============================================================
-   时间轴 (Timeline)
-   ============================================================ */
+ 时间轴
+ ============================================================*/
 .ni-timeline { padding: 4px 0 12px 0; position: relative; }
 
-/* 连续竖线：绝对定位贯穿整个时间轴，不随节点断开 */
+/* 连续竖线：绝对定位贯穿整个时间轴，不随节点断开*/
 .ni-timeline::before {
   content: '';
   position: absolute;
@@ -2493,7 +2533,7 @@ select.ni-modal-input {
   position: relative;
 }
 
-/* 左侧脊柱：只负责定位圆点，线已由父级 ::before 负责 */
+/* 左侧脊柱：只负责定位圆点，线已由父级::before 负责*/
 .ni-tl-spine {
   display: flex;
   flex-direction: column;
@@ -2521,11 +2561,11 @@ select.ni-modal-input {
   width: 12px;
   height: 12px;
 }
-/* 删除原分段线，改由 .ni-timeline::before 统一绘制 */
+/* 删除原分段线，改由.ni-timeline::before 统一绘制*/
 .ni-tl-line { display: none; }
 .ni-tl-item:last-child .ni-tl-line { display: none; }
 
-/* 右侧内容 */
+/* 右侧内容*/
 .ni-tl-content {
   flex: 1;
   min-width: 0;
@@ -2560,7 +2600,7 @@ select.ni-modal-input {
 .ni-tl-item.open .ni-tl-body { display: block; }
 .ni-tl-item.open .ni-plot-chev { transform: rotate(180deg); }
 
-/* 小序号附注（原 sub_notes，改为小字1.2...） */
+/* 小序号附注*/
 .ni-tl-subnotes {
   display: flex;
   flex-direction: column;
@@ -2586,7 +2626,7 @@ select.ni-modal-input {
   line-height: 1.6;
 }
 
-/* 绿色支线分支链接 */
+/* 绿色支线分支链接*/
 .ni-tl-branches {
   display: flex;
   flex-direction: column;
@@ -2616,7 +2656,7 @@ select.ni-modal-input {
 .ni-tl-branch-link i { font-size: 12px; flex-shrink: 0; }
 .ni-tl-branch-link span { flex: 1; line-height: 1.4; }
 
-/* 时间轴 meta 行 */
+/* 时间轴 meta 行*/
 .ni-tl-meta {
   display: flex;
   gap: 8px;
@@ -2625,10 +2665,10 @@ select.ni-modal-input {
   margin-top: 6px;
 }
 
-/* tab icon 对齐 */
+/* tab icon 对齐*/
 .ni-tab i { font-size: 12px; vertical-align: -1px; }
 
-/* 时间轴 — 伏笔标签 */
+/* 时间轴 — 伏笔标签*/
 .ni-tl-foreshadow {
   display: inline-flex;
   align-items: center;
@@ -2642,7 +2682,7 @@ select.ni-modal-input {
 }
 .ni-tl-foreshadow i { font-size: 11px; color: #9C6FD4; }
 
-/* ── 角色人设四字段 ── */
+/* ── 角色人设四字段 ──*/
 .ni-char-detail { margin-top: 6px; margin-bottom: 6px; margin-left: 34px; margin-right: 0; overflow: hidden; border: .5px solid var(--ni-primary-border, #DDB5C0); border-radius: 6px; }
 .ni-char-detail .ni-af-grid { border: none; border-radius: 0; }
 .ni-char-raw-profile { background: var(--color-background-primary); }
@@ -2703,7 +2743,7 @@ select.ni-modal-input {
 }
 
 
-/* 修补关联按钮 */
+/* 修补关联按钮*/
 .ni-plot-link-btn {
   color: #7B5EA7;
   border-color: #C9B8E8;
@@ -2716,7 +2756,7 @@ select.ni-modal-input {
   cursor: not-allowed;
 }
 
-/* 阶段原地编辑 */
+/* 阶段原地编辑*/
 .ni-stage-name-txt { display: inline-block; }
 .ni-stage-inline-input {
   font-size: 13px; font-weight: 500; color: var(--color-text-primary);
@@ -2753,10 +2793,10 @@ select.ni-modal-input {
 
 
 /* ============================================================
-   设置 Tab
-   ============================================================ */
+ 设置 Tab
+ ============================================================*/
 
-/* 插件总开关 — checkbox switch（用 label 包裹，原生 checkbox 控制状态） */
+/* 插件总开关 — checkbox switch*/
 .ni-app .ni-switch-row {
   display: flex; align-items: center; justify-content: space-between;
   padding: 4px 0; gap: 10px; cursor: pointer; user-select: none;
@@ -2818,21 +2858,21 @@ select.ni-modal-input {
   gap: 0 !important;
 }
 
-/* 保存快照面板 */
+/* 保存快照面板*/
 .ni-lib-save-panel-box {
   margin-top: 8px; padding: 10px;
   border: .5px solid var(--color-border-tertiary);
   border-radius: 4px; background: var(--color-background-secondary);
 }
 
-/* 危险按钮 */
+/* 危险按钮*/
 .ni-btn.ni-btn-danger {
   background: transparent; border: 1px solid var(--ni-warning-alpha-40, rgba(220,60,60,.4));
   color: var(--ni-warning, rgba(220,60,60,.8));
 }
 .ni-btn.ni-btn-danger:hover { background: var(--ni-warning-alpha-06, rgba(220,60,60,.08)); border-color: var(--ni-warning-alpha-50, rgba(220,60,60,.7)); }
 
-/* 导入/导出 结果提示 */
+/* 导入/导出 结果提示*/
 .ni-import-result {
   padding: 7px 10px; border-radius: 5px; font-size: 12px; margin-top: 8px;
   display: flex; align-items: center; gap: 6px;
@@ -2840,17 +2880,17 @@ select.ni-modal-input {
 .ni-import-ok { background: var(--ni-success-alpha-10, rgba(29,158,117,.1)); color: var(--ni-success, #1D9E75); border: .5px solid var(--ni-success-alpha-30, rgba(29,158,117,.3)); }
 .ni-import-err { background: var(--ni-warning-alpha-06, rgba(220,60,60,.08)); color: var(--ni-warning, rgba(220,60,60,.9)); border: .5px solid var(--ni-warning-alpha-25, rgba(220,60,60,.25)); }
 
-/* 缓存信息 */
+/* 缓存信息*/
 .ni-cache-info { font-size: 11px; color: var(--color-text-secondary); padding: 4px 0; }
 .ni-cache-info strong { color: var(--color-text-primary); }
 
-/* 原始人设眼睛——固定在原始人设标题行 */
+/* 原始人设眼睛——固定在原始人设标题行*/
 .ni-char-detail-wrap { position: relative; }
 .ni-char-raw-hdr .ni-char-eye-raw { flex-shrink: 0; }
 
 /* ============================================================
-   世界设定模块
-   ============================================================ */
+ 世界设定模块
+ ============================================================*/
 .ni-world-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px; cursor: pointer; user-select: none;
@@ -2860,15 +2900,15 @@ select.ni-modal-input {
 .ni-world-head .ni-ctitle-label { font-size: 13px; font-weight: 600; color: var(--color-text-primary); display: flex; align-items: center; gap: 6px; }
 .ni-world-head-right { display: flex; align-items: center; gap: 8px; }
 #ni-world-chevron { font-size: 13px; color: var(--color-text-secondary); transition: transform .2s; pointer-events: none; }
-/* Chevron rotation when world body is open */
+/* Chevron rotation when world body is open*/
 #ni-world-body-wrap:not([style*="display:none"]) ~ * #ni-world-chevron,
 .ni-world-open #ni-world-chevron { transform: rotate(180deg); }
 
 #ni-world-body-wrap { padding: 0 0 8px; }
 .ni-world-gen-all-btn:disabled { opacity: .5; pointer-events: none; }
 
-/* 单个大类 — 复用 ni-plot-item 风格 */
-/* 单个大类 — 无方框，只用底部细线分隔 */
+/* 单个大类 — 复用 ni-plot-item 风格*/
+/* 单个大类 — 无方框，只用底部细线分隔*/
 .ni-world-cat { border: none; border-bottom: .5px solid var(--color-border-tertiary); border-radius: 0; overflow: hidden; margin-bottom: 0; }
 .ni-world-cat:last-of-type { border-bottom: none; }
 .ni-world-cat-head {
@@ -2879,7 +2919,7 @@ select.ni-modal-input {
 .ni-world-cat-head:hover { opacity: .8; }
 .ni-world-cat-label { font-size: 13px; font-weight: 500; color: var(--color-text-primary); flex: 1; }
 
-/* 头部操作按钮组 */
+/* 头部操作按钮组*/
 .ni-world-head-actions {
   display: flex;
   align-items: center;
@@ -2888,7 +2928,7 @@ select.ni-modal-input {
   margin-right: 4px;
 }
 
-/* 内容区 - 复用 ni-plot-body 但加自定义 */
+/* 内容区 - 复用 ni-plot-body 但加自定义*/
 .ni-world-cat-body { display: none; padding: 4px 2px 12px; }
 .ni-world-cat.open .ni-world-cat-body { display: block; }
 .ni-world-cat.open .ni-plot-chev { transform: rotate(180deg); }
@@ -2906,7 +2946,7 @@ select.ni-modal-input {
 }
 .ni-world-textarea:focus { outline: none; border-color: var(--color-primary); }
 
-/* 添加大类按钮 */
+/* 添加大类按钮*/
 .ni-world-add-cat {
   margin-top: 10px; width: 100%; background: none;
   border: .5px dashed var(--color-border-primary); border-radius: 7px;
@@ -2915,12 +2955,12 @@ select.ni-modal-input {
 }
 .ni-world-add-cat:hover { background: rgba(255,255,255,.03); color: var(--color-text-primary); }
 
-/* 小按钮尺寸 */
+/* 小按钮尺寸*/
 .ni-btn-sm {
   font-size: 12px; padding: 4px 10px;
 }
 
-/* 世界设定卡片 — 去掉灰色边框 */
+/* 世界设定卡片 — 去掉灰色边框*/
 #ni-world-card {
   border: .5px solid var(--color-border-tertiary) !important;
   box-shadow: none !important;
@@ -2928,8 +2968,8 @@ select.ni-modal-input {
 }
 
 /* ============================================================
-   文风模块
-   ============================================================ */
+ 文风模块
+ ============================================================*/
 #ni-style-cfg-panel {
     display: none;
     margin-top: 8px;
@@ -3222,7 +3262,7 @@ select.ni-modal-input {
 }
 
 
-/* 穿书模式勾选框自定义样式 */
+/* 穿书模式勾选框自定义样式*/
 #ni-tb-display-statusbar,
 #ni-tb-display-popup {
   width: 15px;

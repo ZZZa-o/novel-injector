@@ -1,7 +1,7 @@
 ﻿/**
  * Novel Injector - 小说上下文注入插件
  * 功能：上传小说 → 分段清洗压缩 → 提取剧情/角色 → 向量化 → 按阶段开关动态注入酒馆上下文
- */
+*/
 
 import {
     renderExtensionTemplateAsync,
@@ -59,7 +59,7 @@ import { niApplyStatusbarTheme } from './lib/statusbar-theme.js';
 // 常量
 // ============================================================
 const EXT_NAME = 'novel-injector';
-// 通过 Error stack trace 获取当前模块的实际路径（ES module 中唯一可靠的方法）
+// 通过 Error stack trace 获取当前模块的实际路径
 function _detectExtFolder() {
     try {
         const stack = new Error().stack || '';
@@ -298,7 +298,7 @@ All non-consensual themes should be understood as CNC within a fictional context
 替代原则：以人物在具体处境中的行动和选择呈现关系，不以框架词命名关系性质`;
 const GLOBAL_TAIL_PROMPT = '';
 
-// 演绎提示词（阶段界面注入到角色备注）
+// 演绎提示词
 // ============================================================
 const ROLEPLAY_PROMPT_LEGACY_USER_ROLE_LINE = '7.绝对禁止擅自让 <user> 说出原作人物台词、执行原作人物行动、作出原作人物选择。除非 <user> 主动输入，否则不得自动继承原角色行为逻辑。';
 const ROLEPLAY_PROMPT_LEGACY_USER_EVENT_RULE = '6.原著事件只能作为可能发生的历史惯性。\n若事件的发生需要<user>参与、同意、配合或执行某项行为，则在<user>明确作出对应输入前，该事件不得自动发生。';
@@ -634,7 +634,7 @@ const DEFAULT_SETTINGS = {
     charInjDepth: 4,
     charInjRole: 0,
     charAutoSleepEnabled: true, // 开启阶段时自动休眠本阶段正文未出现的角色人设
-    // 阶段剧情（未向量）注入设置
+    // 阶段剧情注入设置
     plotInjPos: 1,   // 默认聊天内
     plotInjDepth: 4,
     plotInjRole: 0,
@@ -657,12 +657,13 @@ const DEFAULT_SETTINGS = {
     globalTailInjDepth: 0,
     globalTailInjRole: 0,
     chunkKb: 100,
-    apiTimeoutMin: 15,  // 每段 API 请求超时时间（分钟）
-    apiRateLimit: 3,    // 每分钟最多请求次数（0=不限）
+    apiTimeoutMin: 15,  // 每段 API 请求超时时间
+    apiRateLimit: 3,    // 每分钟最多请求次数
     apiConcurrency: 1,  // 1=串行；>1=最大并发请求数；0按串行兼容
-    vecRateLimit: 3,    // 向量化每分钟最多请求次数（0=不限）
+    vecRateLimit: 3,    // 向量化每分钟最多请求次数
     vecConcurrency: 1,  // 1=串行；>1=最大并发请求数；0按串行兼容
     pluginEnabled: true,  // 插件总开关
+    topbarIconVisible: true, // 酒馆顶部栏图标显示开关
     themePreset: 'default',
     themePrimary: NI_THEME_DEFAULT.primary,
     themeSuccess: NI_THEME_DEFAULT.success,
@@ -712,7 +713,7 @@ const S = {
     chunks: [],           // string[]
     chunkStatus: [],      // 'pending' | 'running' | 'done' | 'error'
     chunkResults: [],     // string[] — 清洗后的压缩文本
-    chunkMeta: [],        // object[] — 每段原始 meta（{characters, plots}），用于续跑重建
+    chunkMeta: [],        // object[] — 每段原始 meta，用于续跑重建
     fileLoaded: false,
 
     // 清洗
@@ -722,7 +723,7 @@ const S = {
     skipCurrentChunk: false,   // 用户点击"跳过本段"时置 true
     stopClean: false,          // 用户点击"暂停"时置 true
 
-    // 结构化数据（从 AI 返回的 ni_meta）
+    // 结构化数据
     characters: [],       // {name, role, bio}[]
     plots: {              // main/sub/pivot
         main: [],
@@ -731,11 +732,11 @@ const S = {
     },
 
     // 阶段
-    stageStates: {},      // {[stageIdx]: boolean}  — 是否参与向量召回
-    stageSummaries: {},   // {[stageIdx]: string}   — 概括
-    stageTitles: {},      // {[stageIdx]: string}   — 阶段标题（AI生成）
+    stageStates: {},      // {[stageIdx]: boolean} — 是否参与向量召回
+    stageSummaries: {},   // {[stageIdx]: string} — 概括
+    stageTitles: {},      // {[stageIdx]: string} — 阶段标题
     stageMap: {},         // {[chunkIdx]: stageIdx} 用户手动划分的 chunk->阶段 映射
-    stageMapN: 0,         // 用户划分的阶段总数（0=未划分，fallback 等分）
+    stageMapN: 0,         // 用户划分的阶段总数
 
     // 向量
     vecDone: false,
@@ -788,7 +789,7 @@ async function dbOpen() {
                 const store = db.createObjectStore(DB_STORE, { keyPath: 'key' });
                 store.createIndex('novelKey', 'novelKey', { unique: false });
             }
-            // v2：添加 fingerprint 索引（旧库升级时也会执行）
+            // v2：添加 fingerprint 索引
             if (ev.oldVersion < 2) {
                 const store = req.transaction.objectStore(DB_STORE);
                 if (!store.indexNames.contains('fingerprint')) {
@@ -892,7 +893,7 @@ async function dbCloneNovelKey(fromKey, toKey) {
 }
 
 // 检查 DB 内现有向量的 fingerprint 是否与当前配置一致
-// 返回 true=匹配或无旧数据，false=不匹配（调用方决定是否清空）
+// 返回 true=匹配或无旧数据，false=不匹配
 async function dbCheckFingerprint() {
     await dbOpen();
     return new Promise((resolve) => {
@@ -941,7 +942,7 @@ function niLoadSettings() {
     niUpgradeLegacyTbDefaultPrompts(saved);
     if (niUpgradeRoleplayPrompt(saved)) saveSettingsDebounced();
 
-    // 还原轻量索引（重数据在 niLoadSettings 末尾从服务端异步拉取）
+    // 还原轻量索引
     if (saved._stageStates) S.stageStates = saved._stageStates;
     if (saved._stageSummaries) S.stageSummaries = saved._stageSummaries;
     if (saved._stageTitles) S.stageTitles = saved._stageTitles;
@@ -971,7 +972,7 @@ function niLoadSettings() {
     niSyncPluginToggleUI();
 
     // 加载后用 stageMap 重新同步所有 plot 的 stageIdx
-    // stageMap key = main/pivot 数组下标（assignedChunks 约定）
+    // stageMap key = main/pivot 数组下标
     // 同时补全 _chunkIdx 映射，确保角色 _firstChunkIdx 能命中
     if (S.stageMapN > 0 && Object.keys(S.stageMap).length > 0) {
         const mainArr2 = S.plots.main || [];
@@ -1000,7 +1001,7 @@ function niLoadSettings() {
     syncSettingsToUI();
     niLoadDeviationStateFromChat({ allowLegacyMigration: true, collapsed: true });
 
-    // 启动时从服务端拉取重数据（异步，不阻塞 UI）
+    // 启动时从服务端拉取重数据
     if (S.novelKey) {
         niServerLoadHeavy(S.novelKey, S.heavyFileKey, { chunks: false }).then(ok => {
             if (!ok) return;
@@ -1014,7 +1015,7 @@ function niLoadSettings() {
                 niSyncCleanButtonState();
                 renderPlots(); renderCharacters(); buildStages(); niRenderWorldSettings();
             }
-            // Bug修复④：启动拉取重数据后刷新文风 UI（异步加载完成才有 styleGuide）
+            // Bug修复④：启动拉取重数据后刷新文风 UI
             {
                 const resEl = q('#ni-style-result');
                 if (resEl) resEl.value = S.styleGuide || '';
@@ -1038,13 +1039,13 @@ function niLoadSettings() {
 
 
 // ============================================================
-// 服务端文件存储（重数据卸载）
+// 服务端文件存储
 // 文件名格式：
-//   ni_<用户快照名拼音>_<随机key>_core.json
-//   ni_<用户快照名拼音>_<随机key>_chunks.json
-// 写：POST /api/files/upload  body={name, data(base64)}
-// 读：GET  /user/files/<name>
-// 删：POST /api/files/delete  body={path:"user/files/<name>"}
+// ni_<用户快照名拼音>_<随机key>_core.json
+// ni_<用户快照名拼音>_<随机key>_chunks.json
+// 写：POST /api/files/upload body={name, data}
+// 读：GET /user/files/<name>
+// 删：POST /api/files/delete body={path:"user/files/<name>"}
 // ============================================================
 
 // 重数据字段：这些字段从 extension_settings 和 snap.data 里彻底移除
@@ -1119,7 +1120,7 @@ function niHasLoadedChunks() {
     return Array.isArray(S.chunkResults) && S.chunkResults.some(t => String(t || '').trim());
 }
 
-// 把当前工作区的重数据写入服务端文件（novelKey 必须已确定）
+// 把当前工作区的重数据写入服务端文件
 async function niServerSaveHeavy(novelKey, fileKey = '') {
     if (!novelKey) throw new Error('novelKey 为空，无法写入服务端');
     const heavyFileKey = fileKey || S.heavyFileKey || novelKey;
@@ -1407,7 +1408,7 @@ function niQueueDeviationGuideSave({ immediate = false } = {}) {
     return Promise.resolve(true);
 }
 
-// 从服务端读取重数据并还原到工作区 S（novelKey 对应的文件）
+// 从服务端读取重数据并还原到工作区 S
 // 返回 true=成功，false=文件不存在，throw=网络/解析错误
 async function niServerLoadHeavy(novelKey, fileKey = '', opts = {}) {
     if (!novelKey) return false;
@@ -1463,7 +1464,7 @@ async function niBuildStagesWithChunksIfNeeded() {
     buildStages();
 }
 
-// 删除服务端文件（快照删除时调用）
+// 删除服务端文件
 async function niServerDeleteHeavy(novelKey, fileKey = '') {
     if (!novelKey) return;
     const names = [
@@ -1584,7 +1585,7 @@ function niSaveSettings() {
     cfg.apiConcurrency = niCfgBoundInt('#ni-api-concurrency', DEFAULT_SETTINGS.apiConcurrency, 0, 99);
     cfg.vecRateLimit  = Math.max(0, parseInt(q('#ni-vec-rate-limit')?.value) ?? DEFAULT_SETTINGS.vecRateLimit);
     cfg.vecConcurrency = niCfgBoundInt('#ni-vec-concurrency', DEFAULT_SETTINGS.vecConcurrency, 0, 99);
-    // 持久化运行时数据（重数据已卸载到服务端文件，此处只存轻量索引）
+    // 持久化运行时数据
     cfg._stageStates   = S.stageStates;
     cfg._stageSummaries= S.stageSummaries;
     cfg._stageTitles   = S.stageTitles;
@@ -1595,7 +1596,7 @@ function niSaveSettings() {
     cfg._cleanDone     = S.cleanDone;
     cfg._stageMap      = S.stageMap;
     cfg._stageMapN     = S.stageMapN;
-    // 序列化 chunkStageMap（Set 不可直接 JSON，转为 Array）
+    // 序列化 chunkStageMap
     if (S.chunkStageMap) {
         cfg._chunkStageMap = {};
         Object.entries(S.chunkStageMap).forEach(([k, v]) => {
@@ -1712,7 +1713,7 @@ function syncSettingsToUI() {
     _vecQueue.maxPerMin = cfg.vecRateLimit ?? DEFAULT_SETTINGS.vecRateLimit;
     // 修复：初始化时同步渲染小说库，不依赖导航按钮点击
     niRenderNovelLibrary();
-    // 同步穿书模式状态文字（修复首次打开时显示异常）
+    // 同步穿书模式状态文字
     const _tbChk = q('#ni-tb-chk');
     const _tbStateTxt = q('#ni-tb-state');
     if (_tbChk && _tbStateTxt) {
@@ -1727,6 +1728,7 @@ function syncSettingsToUI() {
 const q  = sel => document.querySelector(sel);
 const qa = sel => document.querySelectorAll(sel);
 const sv = (sel, val) => { const el = q(sel); if (el) el.value = val; };
+let _niTopbarIconToggleBound = false;
 const niCfgInt = (sel, fallback) => {
     const n = parseInt(q(sel)?.value, 10);
     return Number.isFinite(n) ? n : fallback;
@@ -1740,6 +1742,101 @@ const niBoundIntValue = (value, fallback, min = 0, max = 9999) => {
 const niCfgBoundInt = (sel, fallback, min = 0, max = 9999) => {
     return niBoundIntValue(q(sel)?.value, fallback, min, max);
 };
+
+function niTopbarIconVisible() {
+    const cfg = extension_settings[EXT_NAME] || {};
+    return (cfg.topbarIconVisible ?? DEFAULT_SETTINGS.topbarIconVisible) !== false;
+}
+
+function niCloseTopbarDrawer() {
+    const icon = $('#ni_drawer_icon');
+    const content = $('#ni_drawer_content');
+    if (icon.length) icon.removeClass('openIcon').addClass('closedIcon');
+    if (content.length) {
+        content.removeClass('openDrawer').addClass('closedDrawer')
+            .attr('data-slide-toggle', 'hidden')
+            .css('display', 'none');
+    }
+}
+
+function niSyncExtensionsMenuTopbarToggle() {
+    const enabled = niTopbarIconVisible();
+    const item = q('#ni-toggle-topbar-icon');
+    const icon = q('#ni-toggle-topbar-icon .extensionsMenuExtensionButton');
+    const state = q('#ni-toggle-topbar-icon-state');
+    if (item) {
+        item.classList.toggle('ni-topbar-icon-off', !enabled);
+        item.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        item.title = enabled ? '隐藏顶栏图标' : '显示顶栏图标';
+    }
+    if (icon) icon.className = `fa-fw fa-solid ${enabled ? 'fa-book-open' : 'fa-book'} extensionsMenuExtensionButton`;
+    if (state) state.textContent = enabled ? '开' : '关';
+}
+
+function niSyncTopbarIconVisibility() {
+    const enabled = niTopbarIconVisible();
+    const drawer = q('#ni_drawer');
+    if (drawer) {
+        if (!enabled) niCloseTopbarDrawer();
+        drawer.style.display = enabled ? '' : 'none';
+    }
+    niSyncExtensionsMenuTopbarToggle();
+}
+
+function niEnsureExtensionsMenuTopbarToggle() {
+    const menu = q('#extensionsMenu');
+    if (!menu) return false;
+    let container = q('#ni_topbar_icon_wand_container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'ni_topbar_icon_wand_container';
+        container.className = 'extension_container interactable';
+        container.tabIndex = 0;
+        container.innerHTML = `
+<div id="ni-toggle-topbar-icon" class="list-group-item flex-container flexGap5 interactable" title="隐藏顶栏图标" tabindex="0" role="button" aria-pressed="true">
+    <div class="fa-fw fa-solid fa-book-open extensionsMenuExtensionButton" aria-hidden="true"></div>
+    <span>顶栏图标</span>
+    <span id="ni-toggle-topbar-icon-state" class="ni-ext-menu-state">开</span>
+</div>`;
+        const quickCss = q('#quick-css-ext-button');
+        if (quickCss?.parentElement === menu) {
+            menu.insertBefore(container, quickCss);
+        } else {
+            menu.appendChild(container);
+        }
+    }
+    niSyncExtensionsMenuTopbarToggle();
+    return true;
+}
+
+function niSetTopbarIconVisible(visible) {
+    const cfg = extension_settings[EXT_NAME] || {};
+    extension_settings[EXT_NAME] = cfg;
+    cfg.topbarIconVisible = visible !== false;
+    niSyncTopbarIconVisibility();
+    saveSettingsDebounced();
+}
+
+function niBindTopbarIconToggleHandlers() {
+    if (_niTopbarIconToggleBound) return;
+    _niTopbarIconToggleBound = true;
+    $(document)
+        .on('click.niTopbarIconToggle', '#ni-toggle-topbar-icon', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            niSetTopbarIconVisible(!niTopbarIconVisible());
+        })
+        .on('keydown.niTopbarIconToggle', '#ni-toggle-topbar-icon', function(e) {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            e.stopPropagation();
+            niSetTopbarIconVisible(!niTopbarIconVisible());
+        })
+        .on('click.niTopbarIconToggle', '#extensionsMenuButton', function() {
+            setTimeout(niEnsureExtensionsMenuTopbarToggle, 0);
+            setTimeout(niEnsureExtensionsMenuTopbarToggle, 120);
+        });
+}
 
 function niSyncDevAutoUI({ syncNote = false } = {}) {
     const input = q('#ni-dev-auto-every');
@@ -1799,12 +1896,12 @@ window.niSwitchPage = niSwitchPage;
 window.niSaveSettings = niSaveSettings;
 
 // ============================================================
-// Tab 切换（剧情页）
+// Tab 切换
 // ============================================================
 function niSwitchTab(name, btn) {
     const tab = ['timeline', 'main', 'sub', 'pivot'].includes(name) ? name : 'timeline';
     _currentPlotTab = tab;
-    // Only switch tabs within the plot tab row (not char tab row)
+    // Only switch tabs within the plot tab row
     const plotTabRow = q('#ni-pg-plot .ni-plot-tab-row');
     if (plotTabRow) {
         plotTabRow.querySelectorAll('.ni-tab[data-tab]').forEach(b => b.classList.remove('on'));
@@ -1846,7 +1943,7 @@ window.niTogglePrompt = niTogglePrompt;
 
 
 // ============================================================
-// 全局提示词面板（设置页，注入到所有 AI 请求）
+// 全局提示词面板
 // ============================================================
 function niToggleGlobalPrompt() {
     const pb  = q('#ni-global-pb');
@@ -1864,7 +1961,7 @@ function niToggleGlobalPrompt() {
 window.niToggleGlobalPrompt = niToggleGlobalPrompt;
 
 // ============================================================
-// 演绎提示词面板（阶段界面）
+// 演绎提示词面板
 // ============================================================
 
 // 将当前启用状态同步到 #depth_prompt_prompt
@@ -1948,8 +2045,8 @@ function niApplyFile(f) {
 
         S.rawFileSize = f.size;
         // novelKey 生成策略：
-        // 如果 cfg 里已有 _novelKey（上次会话保留的），且文件名与 _novelKey 前缀匹配，
-        // 则复用旧 key，保留向量/清洗状态；否则才生成新 key（真正换了一本书）。
+        // 如果 cfg 里已有 _novelKey，且文件名与 _novelKey 前缀匹配，
+        // 则复用旧 key，保留向量/清洗状态；否则才生成新 key。
         const cfg = extension_settings[EXT_NAME] || {};
         const safeName = f.name.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 40);
         const existingKey = cfg._novelKey || '';
@@ -1991,7 +2088,7 @@ function niApplyFile(f) {
         renderChunkList();
         niStylePopulateChunkSel();
         niSyncCleanButtonState();
-        // 只持久化文件相关状态，不触碰向量状态（避免覆盖已有的 stageVecDone/vecDone）
+        // 只持久化文件相关状态，不触碰向量状态
         cfg._novelKey   = S.novelKey;
         cfg._cleanDone  = S.cleanDone;
         cfg._chunkStageMap = S.chunkStageMap
@@ -2008,7 +2105,7 @@ function getCfgKb() {
 
 function splitChunks(text, kb) {
     // 用动态系数：实际字符数/文件字节数，兼容 GBK/UTF-8/混合编码
-    // S._charsPerByte 在 niApplyFile 里计算；未设置时降级用 0.5（GBK典型值）
+    // S._charsPerByte 在 niApplyFile 里计算；未设置时降级用 0.5
     const charsPerByte = S._charsPerByte || 0.5;
     const targetChars = Math.round(kb * 1024 * charsPerByte);
     const res = [];
@@ -2020,7 +2117,7 @@ function splitChunks(text, kb) {
             res.push(text.slice(start));
             break;
         }
-        // 从 end 往后找最近的换行符（最多再找 500 字，防止极端情况退化为硬切）
+        // 从 end 往后找最近的换行符
         const lookAhead = text.indexOf('\n', end);
         if (lookAhead !== -1 && lookAhead - end < 500) {
             end = lookAhead + 1;
@@ -3011,7 +3108,7 @@ function niInsertGlobalPromptMessage(messages, content, { pos, depth, role, pref
 }
 
 // ============================================================
-// API 调用 — 清洗（通过酒馆后端代理，兼容所有 OpenAI 格式 API）
+// API 调用 — 清洗
 // ============================================================
 async function callCleanApi(messages) {
     const cfg = extension_settings[EXT_NAME];
@@ -3159,7 +3256,7 @@ async function niStartClean(options = {}) {
         }
         niRestorePlotOrderMemory(plotOrderMemory);
     }
-    // 续跑时从 chunkMeta 重建已完成段的节点数据（见下方续跑分支）
+    // 续跑时从 chunkMeta 重建已完成段的节点数据
 
     let hasError = false;
 
@@ -3175,7 +3272,7 @@ async function niStartClean(options = {}) {
             continue;
         }
 
-        // 每段处理前，取紧邻的上一段已完成结果作为上下文（而非全局最后一段）
+        // 每段处理前，取紧邻的上一段已完成结果作为上下文
         let prevSummary = '';
         for (let k = i - 1; k >= 0; k--) {
             if (S.chunkStatus[k] === 'done' && S.chunkResults[k]) {
@@ -3223,7 +3320,7 @@ async function niStartClean(options = {}) {
                 success = true;
                 break;
             } catch (err) {
-                // 用户触发了跳过或暂停（abort），直接跳出重试
+                // 用户触发了跳过或暂停，直接跳出重试
                 if (S.skipCurrentChunk || S.stopClean) {
                     setChunkStat(i, 'error');
                     hasError = true;
@@ -3286,10 +3383,10 @@ window.niRetryFailed = niRetryFailed;
 // ============================================================
 // 时间解析：将 time 字段转为可排序的数值
 // 支持格式："乾元十三年五月中旬" / "2012年3月" / "次日" / "某夜" 等
-// 无法解析的返回 null（保持原序）
+// 无法解析的返回 null
 // ============================================================
 
-// 跳过当前正在处理的段（标记为失败，继续处理下一段）
+// 跳过当前正在处理的段
 function niSkipChunk() {
     if (!S.cleanRunning) return;
     S.skipCurrentChunk = true;
@@ -3373,7 +3470,7 @@ async function niRunSingleChunk(i) {
 }
 window.niRunSingleChunk = niRunSingleChunk;
 
-// 暂停清洗（中止当前段，不再继续下一段）
+// 暂停清洗
 function niPauseClean() {
     if (!S.cleanRunning) return;
     S.stopClean = true;
@@ -3405,7 +3502,7 @@ function parseCleanResponse(raw, chunkIndex) {
             // 即使 meta 解析失败，compressed 文本仍保留，不影响向量化
         }
     } else {
-        // AI 没有输出 ni_meta 块时，尝试从正文中抢救裸 JSON（模型偶发忘记包裹标签）
+        // AI 没有输出 ni_meta 块时，尝试从正文中抢救裸 JSON
         const fallbackMatch = raw.match(/\{[\s\S]*"plots"[\s\S]*\}/);
         if (fallbackMatch) {
             try {
@@ -3428,17 +3525,17 @@ function parseCleanResponse(raw, chunkIndex) {
 }
 
 // ============================================================
-// 合并角色数据（去重）
+// 合并角色数据
 // ============================================================
 
 // 判断两个角色名是否可能是同一人：
-// ① 完全相同  ② 一个包含另一个（封号/原名互相包含）  ③ identity 互相包含对方的 name
+// ① 完全相同 ② 一个包含另一个 ③ identity 互相包含对方的 name
 function _isSameChar(a, b) {
     const na = (a.name || '').trim();
     const nb = (b.name || '').trim();
     if (!na || !nb) return false;
     if (na === nb) return true;
-    // 名字包含关系（长度>=2才比，避免单字误判）
+    // 名字包含关系
     if (na.length >= 2 && nb.includes(na)) return true;
     if (nb.length >= 2 && na.includes(nb)) return true;
     return false;
@@ -3753,7 +3850,7 @@ function mergePlots(incoming, chunkIndex) {
     // 若阶段已划分且当前节点是续跑补充的，通过已有节点的 _chunkIdx 反查阶段号。
     let stageIdx = null;
     if (S.stageMapN > 0) {
-        // 在已有节点中找同 chunkIndex 的节点，借用其 stageIdx（已由 niConfirmStageMap 设置）
+        // 在已有节点中找同 chunkIndex 的节点，借用其 stageIdx
         const ref = [...(S.plots.main || []), ...(S.plots.sub || []), ...(S.plots.pivot || [])]
             .find(p => p._chunkIdx === chunkIndex && p.stageIdx != null);
         if (ref) {
@@ -3861,7 +3958,7 @@ function renderTimeline(main, sub, pivot) {
         return;
     }
 
-    // Build sub lookup using branch_links (exact title match)
+    // Build sub lookup using branch_links
     // sub title → { subIdx, subObj }
     const subTitleMap = {};
     sub.forEach((s, i) => { subTitleMap[s.title] = { _subIdx: i, ...s }; });
@@ -3898,7 +3995,7 @@ function renderTimeline(main, sub, pivot) {
               '</div>'
             : '';
 
-        // linked sub plots (branch links) + foreshadows
+        // linked sub plots + foreshadows
         const linked = subByNode[ni] || { subs: [], foreshadows: [] };
         const subLinksHtml = (linked.subs.length || linked.foreshadows.length)
             ? '<div class="ni-tl-branches">' +
@@ -4149,7 +4246,7 @@ async function niRepairBranchLinks() {
         return;
     }
 
-    // 构造给 AI 的数据摘要（含 body 供语义判断，保留顺序作为时间线依据）
+    // 构造给 AI 的数据摘要
     const mainList = niOrderedPlotEntries([
         { type: 'main', items: main },
         { type: 'pivot', items: pivot },
@@ -4514,7 +4611,7 @@ let _charTab = '主角';
 let _charDelMode = false;
 let _charDelSelected = new Set();
 
-// 将 aiProfile 对象渲染为四字段 HTML（兼容旧版字符串格式）
+// 将 aiProfile 对象渲染为四字段 HTML
 function niRenderAiFields(profile) {
     const AI_FIELDS = [
         { key: 'identity',    icon: 'ti-id-badge', label: '身份' },
@@ -4727,10 +4824,10 @@ function niEditChar(i) {
     if (roleEl) roleEl.value = c.role || '其他';
     const fsEl = q(`#ni-cta-firststage-${i}`);
     if (fsEl) fsEl.value = String(getCharFirstStage(c) ?? '');
-    // 编辑时隐藏右列（编辑/保存按钮），让表单撑满全宽
+    // 编辑时隐藏右列，让表单撑满全宽
     const rightCol = q(`#ni-cc-${i}`)?.querySelector('.ni-char-card-right');
     if (rightCol) rightCol.style.display = 'none';
-    // 回填AI人设字段（兼容旧版字符串和新版对象格式）
+    // 回填AI人设字段
     const rawAp = niGetCharAiProfile(i);
     let ap = {};
     if (rawAp && typeof rawAp === 'object') {
@@ -4758,7 +4855,7 @@ function niEditChar(i) {
     const rawEyeOn = c.showRaw !== false;
     const aiEyeOn  = niGetCharAiShowEnabled(i);
     if (rawArea) rawArea.style.display = rawEyeOn ? 'block' : 'none';
-    // AI编辑区：只要有aiProfile数据就显示（眼睛只控制注入，不控制编辑显隐）
+    // AI编辑区：只要有aiProfile数据就显示
     const hasAiProfile = niCharAiProfileHasContent(niGetCharAiProfile(i));
     if (aiArea) aiArea.style.display = hasAiProfile ? 'block' : 'none';
     // 编辑时隐藏展示区和粉框
@@ -4805,10 +4902,10 @@ async function niSaveChar(i) {
         S.characters[i].personality = q(`#ni-cta-personality-${i}`)?.value?.trim() || '';
         S.characters[i].relations   = q(`#ni-cta-relations-${i}`)?.value?.trim()   || '';
         S.characters[i].gender      = q(`#ni-cta-gender-${i}`)?.value?.trim()      || '';
-        // 保存分类（role）
+        // 保存分类
         const newRole = q(`#ni-cta-role-${i}`)?.value || '其他';
         S.characters[i].role = newRole;
-        // 保存初次登场阶段（反写 _firstChunkIdx → 通过 stageMap 反查对应 chunkIdx）
+        // 保存初次登场阶段
         const newFsVal = q(`#ni-cta-firststage-${i}`)?.value;
         const newFs = newFsVal ? parseInt(newFsVal) : null;
         if (newFs != null && S.stageMapN > 0) {
@@ -4818,7 +4915,7 @@ async function niSaveChar(i) {
         } else if (!newFsVal) {
             S.characters[i]._firstChunkIdx = null;
         }
-        // 如果AI编辑区可见，同步保存AI人设（四字段对象格式）
+        // 如果AI编辑区可见，同步保存AI人设
         const aiArea = q(`#ni-cef-ai-${i}`);
         if (aiArea && aiArea.style.display !== 'none') {
             const aiIdentity    = q(`#ni-cta-ai-identity-${i}`)?.value?.trim()    || '';
@@ -4831,7 +4928,7 @@ async function niSaveChar(i) {
     if (form) form.style.display = 'none';
     const sb = q(`#ni-csave-${i}`);
     if (sb) sb.style.display = 'none';
-    // 恢复右列（编辑按钮）
+    // 恢复右列
     const rightColR = q(`#ni-cc-${i}`)?.querySelector('.ni-char-card-right');
     if (rightColR) rightColR.style.display = '';
     // 恢复展示区和粉框，并刷新展示
@@ -4845,7 +4942,7 @@ async function niSaveChar(i) {
         detailEl.style.opacity = '';
         detailEl.style.fontStyle = '';
     }
-    // 刷新头部显示（分类、性别、初次登场），无需整体重绘
+    // 刷新头部显示，无需整体重绘
     if (S.characters[i]) {
         const c = S.characters[i];
         const card = q(`#ni-cc-${i}`);
@@ -4868,7 +4965,7 @@ async function niSaveChar(i) {
                 stageTagWrap.appendChild(btn);
             }
         }
-        // 若 role 变了，需重绘整个列表（tab 分类可能变化）
+        // 若 role 变了，需重绘整个列表
         if (S.characters[i].role !== _charTab && _charTab !== undefined) {
             niSaveSettings();
             renderCharacters();
@@ -4892,7 +4989,7 @@ function niSwitchCharTab(role) {
 window.niSwitchCharTab = niSwitchCharTab;
 
 // ============================================================
-// 刷新「按阶段开/关」抽屉（阶段划分完成后才显示）
+// 刷新「按阶段开/关」抽屉
 // ============================================================
 function niRefreshCharStageSel() {
     const stageRow = q('#ni-char-stage-row');
@@ -4922,7 +5019,7 @@ function niCalcStageOnCount() {
     return stageOnCount;
 }
 
-// 空阶段是否展开（默认折叠）
+// 空阶段是否展开
 let _niShowEmptyStages = false;
 
 // 首次打开面板时完整渲染列表
@@ -4953,7 +5050,7 @@ function niRenderStageDrawer() {
     niSyncEmptyToggleBtn();
 }
 
-// change 后只更新 note 和 badge，不重建列表（保留 checkbox 状态）
+// change 后只更新 note 和 badge，不重建列表
 function niUpdateStageDrawerNote() {
     const note = q('#ni-drawer-note');
     if (!note) return;
@@ -4988,7 +5085,7 @@ window.niRenderStageDrawer = niRenderStageDrawer;
 window.niUpdateStageDrawerNote = niUpdateStageDrawerNote;
 
 // ============================================================
-// 按阶段批量开/关角色（跳过主角）
+// 按阶段批量开/关角色
 // ============================================================
 function getCharFirstStage(c) {
     if (c._firstChunkIdx == null) return null;
@@ -5995,7 +6092,7 @@ function niUpdateVecOffBtn() {
     if (!hasVec) {
         if (btn) btn.style.display = 'none';
         if (modeWrap) modeWrap.style.display = '';
-        // 也隐藏补全按钮（没有任何向量数据，补全无意义）
+        // 也隐藏补全按钮
         const fb = q('#ni-btn-vec-fill');
         if (fb && !S._vecFillVisible) fb.style.display = 'none';
         return;
@@ -6033,7 +6130,7 @@ async function niCheckFillBtnVisibility() {
         const existing = await dbLoadByNovel();
         const existingKeys = new Set(existing.map(c => `s${c.stageIdx}_c${c.chunkIdx}`));
 
-        // 重建完整 chunk 列表（与 niVecFillMissing 完全一致）
+        // 重建完整 chunk 列表
         const stageBuckets = {};
         for (let i = 0; i < S.chunkStatus.length; i++) {
             if (S.chunkStatus[i] !== 'done') continue;
@@ -6089,7 +6186,7 @@ function buildStages() {
     Object.keys(S.stageStates).forEach(k => { if (parseInt(k) > n) delete S.stageStates[k]; });
     Object.keys(S.stageSummaries).forEach(k => { if (parseInt(k) > n) delete S.stageSummaries[k]; });
 
-    // 初始化缺失的状态（阶段一默认开启，其余默认关闭）
+    // 初始化缺失的状态
     for (let i = 1; i <= n; i++) {
         if (S.stageStates[i] === undefined) S.stageStates[i] = (i === 1);
         if (S.stageSummaries[i] === undefined) S.stageSummaries[i] = '';
@@ -6107,14 +6204,14 @@ function buildStages() {
             ? '<span class="ni-vec-status-badge ni-vsb-done">已向量</span>'
             : '<span class="ni-vec-status-badge ni-vsb-none">未向量</span>';
         // 估算 token 数：收集属于本阶段的所有 realChunkIdx，再累加 chunkResults 字符数
-        // 方案B：优先用 S.chunkStageMap（realChunkIdx -> Set<stageIdx>），含边界 chunk
+        // 方案B：优先用 S.chunkStageMap，含边界 chunk
         const stageChunkIdxSet = new Set();
         if (S.chunkStageMap) {
             Object.entries(S.chunkStageMap).forEach(([rci, stageSet]) => {
                 if (stageSet.has(i)) stageChunkIdxSet.add(Number(rci));
             });
         }
-        // fallback：chunkStageMap 不存在（旧数据）时退回 plot._chunkIdx 反推
+        // fallback：chunkStageMap 不存在时退回 plot._chunkIdx 反推
         if (!stageChunkIdxSet.size) {
             const mainArr2 = S.plots.main || [];
             const pivotArr2 = S.plots.pivot || [];
@@ -6131,7 +6228,7 @@ function buildStages() {
         const _rawMode = (extension_settings[EXT_NAME]?.rawInjMode) ?? 'nodes';
         let stageChars = 0;
         if (_rawMode === 'compressed') {
-            // 压缩原文模式：用 chunkResults（有则用压缩正文，否则用原始 chunk）
+            // 压缩原文模式：用 chunkResults
             stageChars = [...stageChunkIdxSet].reduce((acc, ci) => {
                 const text = (S.chunkStatus[ci] === 'done' && S.chunkResults[ci])
                     ? S.chunkResults[ci]
@@ -6251,7 +6348,7 @@ const _apiQueue = {
     },
 };
 
-// 向量化 API 限速队列（与清洗队列独立）
+// 向量化 API 限速队列
 const _vecQueue = {
     maxPerMin: (extension_settings[EXT_NAME]?.vecRateLimit ?? 3),
     timestamps: [],
@@ -6324,7 +6421,7 @@ async function niAcquireApiSeqSlot(signal = null) {
 }
 
 async function callApiSeq(messages, { responseLength = 1000, signal = null } = {}) {
-    // 等待限速槽位（每分钟最多 N 次，0=不限）
+    // 等待限速槽位
     await niAcquireApiSeqSlot(signal);
     const cfg = extension_settings[EXT_NAME];
 
@@ -6378,7 +6475,7 @@ async function callApiSeq(messages, { responseLength = 1000, signal = null } = {
 }
 
 // ============================================================
-// 手动触发：角色概括（串行，防重入）
+// 手动触发：角色概括
 // ============================================================
 let _genCharsRunning = false;
 let _genCharsAbortController = null;
@@ -6856,7 +6953,7 @@ async function niGenOneCharManual(i) {
 window.niGenOneCharManual = niGenOneCharManual;
 
 // ============================================================
-// 手动触发：阶段标题 & 概括（串行，防重入，含进度条）
+// 手动触发：阶段标题 & 概括
 // ============================================================
 let _genStagesRunning = false;
 async function niGenStagesManual(skipExisting = false) {
@@ -6880,7 +6977,7 @@ async function niGenStagesManual(skipExisting = false) {
     if (genBtns) genBtns.classList.add('ni-generating');
     if (card) card.classList.add('ni-has-prog');
 
-    // 进入前强制用 stageMap 重新同步所有 plot 的 stageIdx（防止清洗早于划分导致 null）
+    // 进入前强制用 stageMap 重新同步所有 plot 的 stageIdx
     if (S.stageMapN > 0 && Object.keys(S.stageMap).length > 0) {
         const _m = S.plots.main || [];
         const _pv = S.plots.pivot || [];
@@ -7018,7 +7115,7 @@ function niToggleStage(i) {
     const num = q(`#ni-stgnum-${i}`);
     chk?.classList.toggle('on', S.stageStates[i]);
     if (num) num.className = `ni-stage-num${S.stageStates[i] ? '' : ' off'}`;
-    // 阶段开启时，自动开启该阶段初次登场的角色（主角跳过）；关闭时不影响角色状态
+    // 阶段开启时，自动开启该阶段初次登场的角色；关闭时不影响角色状态
     if (S.stageStates[i]) {
         S.characters.forEach(c => {
             if (c.role === '主角') return;
@@ -7031,8 +7128,8 @@ function niToggleStage(i) {
         Promise.resolve(niRunCharAutoSleepForStage(i))
             .catch(e => console.warn('[NI] 自动休眠角色失败:', e))
             .finally(() => {
-                // 自动触发一次 AI 实时更新人设（静默执行，不阻塞）
-                // 初次登场的角色（firstStage === i）直接排除，不参与本次 AI 更新
+                // 自动触发一次 AI 实时更新人设
+                // 初次登场的角色直接排除，不参与本次 AI 更新
                 const firstAppearIdxSet = new Set(
                     S.characters
                         .map((c, idx) => ({ c, idx }))
@@ -7069,7 +7166,7 @@ function niToggleStageBody(i) {
     }
 
     // 进入编辑模式：标题 → input，概括 → textarea
-    // 有用户真正自定义过的值才预填，否则只显示 placeholder（灰色提示）
+    // 有用户真正自定义过的值才预填，否则只显示 placeholder
     const defaultTitle = `阶段 ${i}`;
     const rawTitle     = S.stageTitles[i] || '';
     const savedTitle   = (rawTitle && rawTitle !== defaultTitle) ? rawTitle : '';
@@ -7238,7 +7335,7 @@ async function niStartVec() {
     const cfg = extension_settings[EXT_NAME];
     const stageN = S.stageMapN > 0 ? S.stageMapN : 1;
 
-    // 读取用户勾选的阶段（ni-vec-stage-checks）
+    // 读取用户勾选的阶段
     const checkEls = qa('.ni-vec-stage-chk');
     const selectedStages = new Set();
     checkEls.forEach(el => { if (el.checked) selectedStages.add(parseInt(el.value)); });
@@ -7299,7 +7396,7 @@ async function niStartVec() {
     if (titleProg2) titleProg2.style.display = 'flex';
     if (vpCard) vpCard.classList.add('ni-has-prog');
 
-    // 仅清除选中阶段的旧向量（其他阶段保留）
+    // 仅清除选中阶段的旧向量
     try {
         const existing = await dbLoadByNovel();
         const toDelete = existing.filter(c => selectedStages.has(c.stageIdx));
@@ -7313,8 +7410,8 @@ async function niStartVec() {
         }
     } catch (e) { console.warn('[NI] 清除旧向量失败:', e); }
 
-    // 将压缩稿按阶段分组（只处理选中阶段）
-    // 方案B：优先用 chunkStageMap（realChunkIdx -> Set<stageIdx>），
+    // 将压缩稿按阶段分组
+    // 方案B：优先用 chunkStageMap，
     // 保证边界 chunk 被同时放入相邻两个阶段；若未生成则退回旧逻辑。
     const stageBuckets = {}; // { [stageIdx]: Array<{text, sourceChunkIdx}> }
     for (let i = 0; i < S.chunkStatus.length; i++) {
@@ -7329,7 +7426,7 @@ async function niStartVec() {
             // 方案B：chunkStageMap key 是 realChunkIdx
             assignedStages = [...S.chunkStageMap[i]];
         } else {
-            // fallback：旧 stageMap（key=数组下标，仅在无 pivot 时与 realChunkIdx 一致）
+            // fallback：旧 stageMap
             const si = (S.stageMapN > 0 && (S.stageMap[i] !== undefined || S.stageMap[String(i)] !== undefined))
                 ? (S.stageMap[i] ?? S.stageMap[String(i)])
                 : 1;
@@ -7463,7 +7560,7 @@ async function niVecFillMissing() {
         console.warn('[NI] 读取 IndexedDB 失败:', e);
     }
 
-    // 2. 重建完整的 stageBuckets（与 niStartVec 逻辑完全一致，覆盖全部阶段）
+    // 2. 重建完整的 stageBuckets
     const allStages = new Set();
     for (let si = 1; si <= (S.stageMapN > 0 ? S.stageMapN : 1); si++) allStages.add(si);
 
@@ -7563,7 +7660,7 @@ window.niVecFillMissing = niVecFillMissing;
 
 // 渲染向量化阶段选择器
 function niRenderVecStageSelector() {
-    // 同时更新 card 内（兼容）与 modal 内列表
+    // 同时更新 card 内与 modal 内列表
     const targets = [q('#ni-vec-stage-selector')].filter(Boolean);
     const n = S.stageMapN;
     if (n <= 0) { targets.forEach(w => { w.style.display = 'none'; }); return; }
@@ -7590,7 +7687,7 @@ window.niToggleStagePanel = niToggleStagePanel;
 window.niRenderVecStageSelector = niRenderVecStageSelector;
 
 // ============================================================
-// Embedding API 调用（OpenAI 兼容）
+// Embedding API 调用
 // ============================================================
 async function embedText(text) {
     const cfg = extension_settings[EXT_NAME];
@@ -7621,7 +7718,7 @@ async function embedText(text) {
 }
 
 // ============================================================
-// 消息内容提取（支持标签过滤）
+// 消息内容提取
 // ============================================================
 function niExtractTagBlocks(text, tag) {
     const name = String(tag || '').trim();
@@ -7743,7 +7840,7 @@ function niApplyTbLightRecallCut(text, lightCtx) {
     return sections.join('\n\n---\n\n');
 }
 
-// 加权向量召回：接收 [{text, weight}, ...] 批量 embedding，指数衰减加权合并后召回
+// 加权向量召回：接收 [{text, weight},...] 批量 embedding，指数衰减加权合并后召回
 async function recallRelevantWeighted(weightedQueries, stageList, opts = {}) {
     const cfg = extension_settings[EXT_NAME];
     const topK   = cfg.recallTopK  ?? DEFAULT_SETTINGS.recallTopK;
@@ -8642,10 +8739,10 @@ function animateBar(barId, valId, target) {
 // 世界设定模块
 // ============================================================
 
-// 获取当前世界设定大类列表（优先运行时，fallback 默认）
+// 获取当前世界设定大类列表
 function niGetWorldCategories() {
     if (S.worldCategories && S.worldCategories.length) return S.worldCategories;
-    // 首次使用：从默认大类初始化（加入 content 字段）
+    // 首次使用：从默认大类初始化
     return WORLD_DEFAULT_CATEGORIES.map(c => ({ ...c, content: '' }));
 }
 
@@ -8695,7 +8792,7 @@ function niRenderWorldSettings() {
     });
 }
 
-// 切换大类开关（只切换注入状态，不折叠条目，不重渲染）
+// 切换大类开关
 function niWorldToggleCat(idx) {
     const cats = niGetWorldCategories();
     if (!cats[idx]) return;
@@ -8769,7 +8866,7 @@ async function niWorldGenOne(idx) {
             const shrinkPrompt = WORLD_SHRINK_PROMPT.replace('{CONTENT}', final);
             try {
                 final = (await callApiSeq([{ role: 'user', content: shrinkPrompt }])).trim();
-            } catch (_) { /* 缩写失败就用原始结果 */ }
+            } catch (_) { /* 缩写失败就用原始结果*/ }
         }
         cats[idx].content = final;
         niSaveWorldCategories(cats);
@@ -8781,7 +8878,7 @@ async function niWorldGenOne(idx) {
     }
 }
 
-// AI 全部生成（串行，每大类独立 prompt）
+// AI 全部生成
 let _worldGenRunning = false;
 async function niWorldGenAll() {
     if (_worldGenRunning) return;
@@ -8805,7 +8902,7 @@ async function niWorldGenAll() {
                 const shrinkPrompt = WORLD_SHRINK_PROMPT.replace('{CONTENT}', final);
                 try {
                     final = (await callApiSeq([{ role: 'user', content: shrinkPrompt }])).trim();
-                } catch (_) { /* 缩写失败就用原始结果 */ }
+                } catch (_) { /* 缩写失败就用原始结果*/ }
             }
             cats[i].content = final;
         } catch (e) {
@@ -8835,7 +8932,7 @@ window.niWorldGenAll = niWorldGenAll;
 window.niWorldAddCat = niWorldAddCat;
 
 // ============================================================
-// 注入酒馆上下文（CHAT_COMPLETION_PROMPT_READY）
+// 注入酒馆上下文
 // ============================================================
 async function onPromptReady(eventData) {
     if (eventData?.dryRun) return;
@@ -8881,7 +8978,7 @@ async function onPromptReady(eventData) {
     if (!chat.length) return;
     niLoadDeviationStateFromChat({ allowLegacyMigration: false, collapsed: true, syncUI: false });
 
-    // 已开启的阶段（遍历 1..stageMapN，undefined 视为默认开启）
+    // 已开启的阶段
     const n = S.stageMapN;
     if (n <= 0) return;
     const enabledStages = [];
@@ -8901,14 +8998,14 @@ async function onPromptReady(eventData) {
     const plotDepth= cfg.plotInjDepth?? DEFAULT_SETTINGS.plotInjDepth;
     const plotRole = cfg.plotInjRole ?? DEFAULT_SETTINGS.plotInjRole;
 
-    // 分离已向量/未向量的开启阶段（若用户关闭向量注入，则将已向量阶段降级为 raw 注入）
+    // 分离已向量/未向量的开启阶段
     const vecInjDisabled = !!(cfg.vecInjDisabled);
     const vecStages = vecInjDisabled ? [] : enabledStages.filter(si => S.stageVecDone[si]);
     const rawStages = vecInjDisabled
         ? enabledStages.slice()
         : enabledStages.filter(si => !S.stageVecDone[si]);
 
-    // ① 向量块注入（已向量阶段 → 语义召回）
+    // ① 向量块注入
     if (vecStages.length) {
         // 穿书模式下，取当前节点的时间/地点作为语义锚点
         let curTbNode = null;
@@ -8931,7 +9028,7 @@ async function onPromptReady(eventData) {
             .map(m => extractMesText(m.mes || '', msgTag))
             .filter(t => t.trim());
 
-        // 构造加权 queries：最新条权重1.0，每往前一条×0.5（指数衰减）
+        // 构造加权 queries：最新条权重1.0，每往前一条×0.5
         // nodeContext 拼入最新一条
         const weightedQueries = recentMsgs.map((t, i) => {
             const isNewest = i === recentMsgs.length - 1;
@@ -8951,7 +9048,7 @@ async function onPromptReady(eventData) {
         }
     }
 
-    // ② 阶段剧情注入（未向量阶段）
+    // ② 阶段剧情注入
     if (rawStages.length) {
         const rawMode = cfg.rawInjMode ?? DEFAULT_SETTINGS.rawInjMode;
         const plotLines = [];
@@ -8977,8 +9074,8 @@ async function onPromptReady(eventData) {
         for (const si of rawStages) {
             if (tbLockedStages.has(si)) continue; // 5.1：前序阶段有未完成节点，跳过注入
             if (rawMode === 'compressed') {
-                // 压缩原文模式（方案B）：
-                // 优先用 S.chunkStageMap（realChunkIdx -> Set<stageIdx>）收集该阶段的 chunk，
+                // 压缩原文模式：
+                // 优先用 S.chunkStageMap收集该阶段的 chunk，
                 // 保证边界 chunk 被正确归入相邻阶段，不依赖 plot._chunkIdx 反推。
                 const chunkIdxSet = new Set();
                 if (S.chunkStageMap) {
@@ -8986,7 +9083,7 @@ async function onPromptReady(eventData) {
                         if (stageSet.has(si)) chunkIdxSet.add(Number(rci));
                     });
                 }
-                // fallback：若 chunkStageMap 尚未生成（旧数据加载），退回 plot._chunkIdx 反推
+                // fallback：若 chunkStageMap 尚未生成，退回 plot._chunkIdx 反推
                 if (!chunkIdxSet.size) {
                     (S.plots.main || []).forEach(p => {
                         if ((p.stageIdx ?? null) === si && p._chunkIdx != null) chunkIdxSet.add(p._chunkIdx);
@@ -9005,7 +9102,7 @@ async function onPromptReady(eventData) {
                     plotLines.push(...texts);
                 }
             } else {
-                // 剧情节点模式（默认）
+                // 剧情节点模式
                 const nodes = getNodesForStage(si);
                 const allNodes = niMergeStageNodes(nodes);
                 if (allNodes.length) {
@@ -9023,7 +9120,7 @@ async function onPromptReady(eventData) {
         }
     }
 
-    // ③ 角色人设注入（enabled=true 且有内容的角色）
+    // ③ 角色人设注入
     const charLines = [];
     if (S.characters.length) {
         const userSubCfg = niGetUserSubConfig();
@@ -9303,7 +9400,7 @@ async function fetchModels(urlInputId, keyInputId, selectId, textInputId) {
 // 处理 Tab — 文风模块
 // ============================================================
 
-/** 根据模式切换 UI 显隐 */
+/** 根据模式切换 UI 显隐*/
 function niStyleSyncMode() {
     const mode = q('#ni-style-mode')?.value || 'sample';
     const sampleCfg = q('#ni-style-sample-cfg');
@@ -9312,11 +9409,11 @@ function niStyleSyncMode() {
     if (manualCfg) manualCfg.style.display = mode === 'manual' ? 'block' : 'none';
 }
 
-/** 根据已有 chunkMeta 填充段落下拉选项 */
+/** 根据已有 chunkMeta 填充段落下拉选项*/
 function niStylePopulateChunkSel() {
     const sel = q('#ni-style-chunk-sel');
     if (!sel) return;
-    // 优先用 chunks（上传后即可用），其次 chunkStatus，最后 chunkMeta
+    // 优先用 chunks，其次 chunkStatus，最后 chunkMeta
     const total = S.chunks?.length || S.chunkStatus?.length || S.chunkMeta?.length || 1;
     sel.innerHTML = Array.from({ length: total }, (_, i) =>
         `<option value="${i}">第 ${i + 1} 段</option>`).join('');
@@ -9325,7 +9422,7 @@ function niStylePopulateChunkSel() {
     sel.value = Math.min(savedIdx, sel.options.length - 1);
 }
 
-/** 生成文风：采集样本 → 调 API → 渲染结果 */
+/** 生成文风：采集样本 → 调 API → 渲染结果*/
 async function niGenerateStyle() {
     const cfg = extension_settings[EXT_NAME] || {};
     const mode = q('#ni-style-mode')?.value || 'sample';
@@ -9616,7 +9713,7 @@ async function niUpdateNovelSnapshot(idx) {
     const heavyFileKey = snap.data?._heavyFileKey || S.heavyFileKey || niSnapshotFileKey(snap.name || S.novelKey, S.novelKey);
     S.heavyFileKey = heavyFileKey;
 
-    // 重数据写服务端文件（覆盖旧文件）
+    // 重数据写服务端文件
     try {
         await niServerSaveHeavy(S.novelKey, heavyFileKey);
     } catch (e) {
@@ -9693,7 +9790,7 @@ async function niLoadNovelSnapshot(idx) {
         Object.entries(d._chunkStageMap).forEach(([k, v]) => { S.chunkStageMap[k] = new Set(v); });
     }
     if (d._worldCategories) S.worldCategories = d._worldCategories;
-    // Bug修复③：还原文风并立即刷新 UI（避免切换小说后文风显隐状态残留）
+    // Bug修复③：还原文风并立即刷新 UI
     S.styleGuide = (d._styleGuide != null) ? d._styleGuide : '';
     niLoadDeviationStateFromChat({ allowLegacyMigration: false, collapsed: true, syncUI: false });
     {
@@ -9805,7 +9902,7 @@ async function niDeleteNovelSnapshot(idx) {
 // 设置 Tab — 导入 / 导出
 // ============================================================
 // ============================================================
-// 导入 / 导出（ZIP 格式，含向量二进制）
+// 导入 / 导出
 // ============================================================
 
 // --- 导出：打包为 ZIP ---
@@ -9830,7 +9927,7 @@ async function niExportData() {
         }
     } catch (e) { console.warn('[NI] 读取向量失败，将导出不含向量的版本:', e); }
 
-    // 2. 构建 settings.json（原 JSON 格式，保持完整兼容性）
+    // 2. 构建 settings.json
     const exportObj = {
         _ni_export_version: 2,
         _ni_export_time: new Date().toISOString(),
@@ -9931,7 +10028,7 @@ async function niImportData(file) {
     const isZip = file.name.endsWith('.zip');
 
     if (!isZip) {
-        // ── 旧版 JSON 导入（完整保留原逻辑）──
+        // ── 旧版 JSON 导入──
         const reader = new FileReader();
         reader.onload = async ev => {
             try {
@@ -10071,7 +10168,7 @@ async function niImportData(file) {
             } catch (e) { console.warn('[NI] 向量写入失败:', e); }
         }
 
-        // 把重数据写服务端文件（暂存到 S 再写再还原）
+        // 把重数据写服务端文件
         const oldS2 = { characters: S.characters, plots: S.plots, chunkResults: S.chunkResults, chunkMeta: S.chunkMeta, chunkStatus: S.chunkStatus, styleGuide: S.styleGuide };
         S.characters   = niStripCharAiRuntime(rt._characters);
         S.plots        = rt._plots        || { main: [], sub: [], pivot: [] };
@@ -10091,7 +10188,7 @@ async function niImportData(file) {
         S.chunkResults = oldS2.chunkResults; S.chunkMeta = oldS2.chunkMeta; S.chunkStatus = oldS2.chunkStatus;
         S.styleGuide = oldS2.styleGuide;
 
-        // 添加快照到小说库（snap.data 只存轻量字段）
+        // 添加快照到小说库
         if (!cfg.novelLibrary) cfg.novelLibrary = [];
         cfg.novelLibrary.push({
             name: snapName,
@@ -10199,7 +10296,7 @@ window.niClearAllData = niClearAllData;
 
 jQuery(async () => {
 
-    // ── 动态注入小说库书卡样式（防止 CSS 缓存导致样式缺失）─────
+    // ── 动态注入小说库书卡样式─────
     {
         let s = document.getElementById('ni-book-grid-style');
         if (!s) { s = document.createElement('style'); s.id = 'ni-book-grid-style'; document.head.appendChild(s); }
@@ -10220,7 +10317,7 @@ jQuery(async () => {
         `;
     }
 
-    // ── 动态注入世界设定样式（覆盖酒馆全局 button 样式）─────────
+    // ── 动态注入世界设定样式─────────
     {
         let ws = document.getElementById('ni-world-override-style');
         if (!ws) { ws = document.createElement('style'); ws.id = 'ni-world-override-style'; document.head.appendChild(ws); }
@@ -10259,7 +10356,7 @@ jQuery(async () => {
         </div>
       </div>`;
 
-    // 插入到扩展按钮（fa-cubes）之前
+    // 插入到扩展按钮之前
     const extensionsBtn = document.querySelector('.drawer-icon.fa-solid.fa-cubes');
     const extensionsDrawer = extensionsBtn?.closest('.drawer');
     if (extensionsDrawer) {
@@ -10273,6 +10370,7 @@ jQuery(async () => {
             $('#extensions-settings-button').after(drawerHtml);
         }
     }
+    niBindTopbarIconToggleHandlers();
 
     // ── 在 template 插入 DOM 后，立即将 FAB/popup 挂到 body ──
     if (typeof window.niPopBootstrap === 'function') {
@@ -10367,7 +10465,7 @@ jQuery(async () => {
         }
     });
 
-    // 演绎提示词面板（阶段界面）
+    // 演绎提示词面板
     $app.on('click', '#ni-stage-prompt-btn', () => niToggleStagePrompt());
     $app.on('click', '#ni-vec-off-btn', () => {
         const cfg = extension_settings[EXT_NAME];
@@ -10591,7 +10689,7 @@ jQuery(async () => {
         const page = $(this).data('page');
         if (page) {
             niSwitchPage(page, this);
-            // 切换到阶段页时强制刷新，确保向量化状态标签（已向量/未向量）实时更新
+            // 切换到阶段页时强制刷新，确保向量化状态标签实时更新
             if (page === 'stage') niBuildStagesWithChunksIfNeeded();
         }
     });
@@ -10730,7 +10828,7 @@ jQuery(async () => {
         niOpenPlotModal('edit', m[1], parseInt(m[2]));
     });
 
-    // 阶段划分面板按钮（替代 inline onclick，避免 CSP 拦截）
+    // 阶段划分面板按钮
     $app.on('click', '#ni-stage-map-btn', () => niOpenStagePanel());
     $app.on('click', '#ni-sp-ai-btn',     () => niAutoStageByPivot());
     $app.on('click', '.ni-sp-add-btn',    () => niAddStageSlot());
@@ -10807,7 +10905,7 @@ jQuery(async () => {
     });
     // - 删除模式切换
     $app.on('click', '#ni-btn-del-char', () => niToggleCharDel());
-    // 删除模式：点击角色卡选中/取消（与剧情节点一致）
+    // 删除模式：点击角色卡选中/取消
     $app.on('click', '.ni-char-card.ni-del-mode', function(e) {
         // 不拦截内部按钮/checkbox等的点击
         if ($(e.target).closest('button, a, input, label').length) return;
@@ -10826,7 +10924,7 @@ jQuery(async () => {
     // 删除模式：确认删除
     $app.on('click', '#ni-char-del-confirm-btn', () => niConfirmCharDel());
 
-    // 动态生成元素的事件委托（使用 data-* 属性，避免 inline onclick CSP 问题）
+    // 动态生成元素的事件委托
     $app.on('click', '.ni-plot-head', function(e) {
         if (_plotEditMode || _plotDelMode) {
             e.preventDefault();
@@ -10877,7 +10975,7 @@ jQuery(async () => {
         niSyncCharAutoSleepUI();
         saveSettingsDebounced();
     });
-    // 单个角色开关（div toggle）
+    // 单个角色开关
     $app.on('click', '.ni-char-chk', function() {
         const i = parseInt($(this).data('char-idx'));
         if (!S.characters[i]) return;
@@ -10897,7 +10995,7 @@ jQuery(async () => {
         niSaveSettings();
         renderCharacters();
     });
-    // AI人设眼睛（粉框内 或 右列）
+    // AI人设眼睛
     $app.on('click', '.ni-char-eye-ai, .ni-char-eye-ai-r', async function() {
         const i = parseInt($(this).data('char-idx'));
         if (!S.characters[i]) return;
@@ -10915,7 +11013,7 @@ jQuery(async () => {
         S.characters.forEach(c => { if ((c.role || '其他') === _charTab) { c.enabled = false; niClearCharAutoSleep(c); } });
         niSaveSettings(); renderCharacters();
     });
-    // 阶段抽屉：触发按钮开关（按初次登场阶段批量操作，主角不受影响）
+    // 阶段抽屉：触发按钮开关
     $app.on('click', '#ni-drawer-trigger', function(e) {
         e.stopPropagation();
         const panel = q('#ni-drawer-panel');
@@ -10925,7 +11023,7 @@ jQuery(async () => {
         trigger.classList.toggle('open', isOpen);
         if (isOpen) niRenderStageDrawer();
     });
-    // 阶段抽屉：点击外部关闭（panel 关闭时 pointer-events:none，不会拦截其他按钮）
+    // 阶段抽屉：点击外部关闭
     $(document).on('click.ni-drawer', function(e) {
         const panel = q('#ni-drawer-panel');
         if (!panel || !panel.classList.contains('open')) return;
@@ -10978,7 +11076,7 @@ jQuery(async () => {
         }
         niUpdateStageDrawerNote();
     });
-    // 阶段抽屉：单个阶段 checkbox（change 事件是唯一触发源）
+    // 阶段抽屉：单个阶段 checkbox
     $app.on('change', '.ni-drawer-item input[type=checkbox]', function(e) {
         e.stopPropagation();
         const idx = parseInt($(this).data('drawer-stage'));
@@ -10987,7 +11085,7 @@ jQuery(async () => {
             niUpdateStageDrawerNote();  // 只更新文字，不重建列表
         }
     });
-    // 阶段抽屉：点击 item 行触发（排除 checkbox 和 label，避免与 change 事件双重触发）
+    // 阶段抽屉：点击 item 行触发
     $app.on('click', '.ni-drawer-item', function(e) {
         e.stopPropagation();
         // checkbox 和 label 内部点击均交由原生行为 + change 事件处理，不重复处理
@@ -11033,7 +11131,7 @@ jQuery(async () => {
             container.dataset.activeType = '';
             $(this).removeClass('ni-pill-active');
         } else {
-            // Render inline node list (clickable rows → navigate)
+            // Render inline node list
             const nodes = getNodesForStage(stageIdx);
             const typeMap = { main: '主线节点', sub: '支线节点', pivot: '关键转折' };
             const items = nodes[plotType] || [];
@@ -11083,6 +11181,8 @@ jQuery(async () => {
 
     // 加载设置
     niLoadSettings();
+    niSyncTopbarIconVisibility();
+    niEnsureExtensionsMenuTopbarToggle();
     niRenderWorldSettings();
     // 设置 Tab 事件绑定
     // 插件总开关
@@ -11188,7 +11288,7 @@ jQuery(async () => {
         if (panel) panel.style.display = 'none';
         q('#ni-lib-save-name') && (q('#ni-lib-save-name').value = '');
     });
-    // 小说库 — 加载/删除（事件委托）
+    // 小说库 — 加载/删除
     $app.on('click', '.ni-lib-load-btn', function() {
         niLoadNovelSnapshot(parseInt($(this).data('lib-idx')));
     });
@@ -11215,13 +11315,13 @@ jQuery(async () => {
     $app.on('click', '#ni-clear-all-btn', () => niClearAllData());
 
     // ── 文风模块 ──
-    // 设置面板开关（复用 niTogglePanel 获得变粉效果）
+    // 设置面板开关
     $app.on('click', '#ni-style-cfg-btn', () => {
         niTogglePanel('ni-style-cfg-panel', 'ni-style-cfg-btn');
         // 打开时填充段落下拉
         if (q('#ni-style-cfg-panel')?.classList.contains('on')) niStylePopulateChunkSel();
     });
-    // 提示词面板开关（复用 niTogglePanel 获得变粉效果）
+    // 提示词面板开关
     $app.on('click', '#ni-style-prompt-btn', () => {
         niTogglePanel('ni-style-pb', 'ni-style-prompt-btn');
     });
@@ -11236,7 +11336,7 @@ jQuery(async () => {
         niStyleSyncMode();
         niSaveSettings();
     });
-    // 注入开关 / 注入设置变更 → 保存（注入设置在注入设置卡片中，此处只监听开关）
+    // 注入开关 / 注入设置变更 → 保存
     $app.on('change', '#ni-style-inj-enabled', () => niSaveSettings());
     // 采样参数变更 → 保存
     $app.on('change', '#ni-style-sample-len, #ni-style-chunk-sel', () => niSaveSettings());
@@ -11267,7 +11367,7 @@ jQuery(async () => {
 
     });
 
-    // 恢复 UI 状态（如果上次有清洗数据）
+    // 恢复 UI 状态
     if (S.cleanDone) {
         // 恢复文件状态显示
         if (S.chunkStatus.length) {
@@ -11362,7 +11462,7 @@ window.niRemoveStageSlot = niRemoveStageSlot;
 function niToggleChunkInSlot(sid, chunkIdx) {
     const slot = _stageSlots[sid];
     if (!slot) return;
-    // 若已在本 slot 中选中，则取消选中（toggle 逻辑）
+    // 若已在本 slot 中选中，则取消选中
     if (slot.assignedChunks.has(chunkIdx)) {
         slot.assignedChunks.delete(chunkIdx);
     } else {
@@ -11404,7 +11504,7 @@ function niRenderStageSlots() {
         isPivot: entry._type === 'pivot',
     }));
 
-    // 展开状态管理（默认展开新增阶段）
+    // 展开状态管理
     if (!window._slotOpenStates) window._slotOpenStates = {};
     Object.keys(window._slotOpenStates).forEach(k => {
         if (!slots.find(([sid]) => String(sid) === k)) delete window._slotOpenStates[k];
@@ -11545,7 +11645,7 @@ async function niAutoStageByPivot() {
         chunkIdx: niPlotChunkIdx(entry, entry._sourceIdx ?? 0),
     }));
 
-    // 按新逻辑划分：遍历时间轴，遇到 pivot 就封闭当前阶段（pivot 归入本阶段），之后开新阶段
+    // 按新逻辑划分：遍历时间轴，遇到 pivot 就封闭当前阶段，之后开新阶段
     _stageSlots = {};
     _slotCounter = 0;
     let currentChunks = new Set();
@@ -11584,13 +11684,13 @@ function niConfirmStageMap() {
     const slots = Object.entries(_stageSlots);
     if (!slots.length) { niCloseStagePanel(); return; }
 
-    // 构建 chunk->stageIdx 映射（按 slot 顺序赋予 1,2,3...）
-    // newMap 以「main/pivot数组下标(ci)」为 key（原有逻辑，供 plot 归属查询）
-    // chunkStageMap 以「真实 _chunkIdx」为 key，值为 Set<stageIdx>（方案B：边界chunk可归属多个阶段）
+    // 构建 chunk->stageIdx 映射
+    // newMap 以「main/pivot数组下标」为 key
+    // chunkStageMap 以「真实 _chunkIdx」为 key，值为 Set<stageIdx>
     const newMap = {};
     const mainArr = S.plots.main || [];
     const pivotArr = S.plots.pivot || [];
-    // chunkStageMap: realChunkIdx -> Set of stageIdx（支持边界chunk属于多阶段）
+    // chunkStageMap: realChunkIdx -> Set of stageIdx
     const chunkStageMap = {}; // { [realChunkIdx]: Set<stageIdx> }
 
     let si = 1;
@@ -11610,8 +11710,8 @@ function niConfirmStageMap() {
         si++;
     });
 
-    // 第二轮（方案B核心）：检测边界 chunk——同一个 realChunkIdx 被相邻两个阶段共用时，
-    // 将该 chunk 同时写入两个阶段的集合（注入时两个阶段都能拿到完整压缩正文）
+    // 第二轮：检测边界 chunk——同一个 realChunkIdx 被相邻两个阶段共用时，
+    // 将该 chunk 同时写入两个阶段的集合
     // 额外检测：某阶段首/尾节点的 _chunkIdx 与相邻阶段末/首节点的 _chunkIdx 相同时，补充归属
     sortedSlots.forEach(([, slot], slotIdx) => {
         const curSi = slotIdx + 1;
@@ -11636,7 +11736,7 @@ function niConfirmStageMap() {
                 : (pivotArr[ci - mainArr.length]?._chunkIdx ?? ci);
             if (rci < minNextRealCi) minNextRealCi = rci;
         });
-        // 如果两个阶段最近的 chunk 相邻（差1），则各自获得对方的边界 chunk
+        // 如果两个阶段最近的 chunk 相邻，则各自获得对方的边界 chunk
         if (maxRealCi >= 0 && minNextRealCi !== Infinity && minNextRealCi - maxRealCi === 1) {
             // 边界 chunk：当前阶段末尾 chunk 也归入下一阶段；下一阶段首 chunk 也归入当前阶段
             if (!chunkStageMap[maxRealCi]) chunkStageMap[maxRealCi] = new Set();
@@ -11644,7 +11744,7 @@ function niConfirmStageMap() {
             if (!chunkStageMap[minNextRealCi]) chunkStageMap[minNextRealCi] = new Set();
             chunkStageMap[minNextRealCi].add(curSi); // 下一阶段首 chunk 给当前阶段
         }
-        // 如果两个阶段共享同一个 realChunkIdx（阶段边界在同一 chunk 内部切割），
+        // 如果两个阶段共享同一个 realChunkIdx，
         // 该 chunk 已在第一轮被两个阶段各自 add，chunkStageMap 已含两个 stageIdx
     });
 
@@ -11652,7 +11752,7 @@ function niConfirmStageMap() {
     // 避免这些 chunk 在向量化时 fallback 到错误阶段
     const totalChunkN = S.chunkStatus?.length || 0;
     if (totalChunkN > 0) {
-        // 收集所有已知的 realChunkIdx -> 阶段（取 Set 里最小值作为代表）
+        // 收集所有已知的 realChunkIdx -> 阶段
         const knownMap = {};  // realChunkIdx -> stageIdx
         Object.entries(chunkStageMap).forEach(([rci, stageSet]) => {
             knownMap[Number(rci)] = Math.min(...stageSet);
@@ -11680,7 +11780,7 @@ function niConfirmStageMap() {
     S.stageMap = newMap;
     S.stageMapN = slots.length;
 
-    // 找出节点归属发生变化的阶段，清空其概括和标题（其他阶段保留）
+    // 找出节点归属发生变化的阶段，清空其概括和标题
     const changedStages = new Set();
     const allCiKeys = new Set([
         ...Object.keys(oldMap).map(Number).filter(n => !isNaN(n)),
@@ -11700,14 +11800,14 @@ function niConfirmStageMap() {
         delete S.stageVecDone[si];
     });
 
-    // 清除超出当前阶段数的旧状态，新阶段按默认规则初始化（阶段一开，其余关）
+    // 清除超出当前阶段数的旧状态，新阶段按默认规则初始化
     // 重新划分时已有阶段的开关状态保持不变，不进行重置
     Object.keys(S.stageStates).forEach(k => { if (parseInt(k) > slots.length) delete S.stageStates[k]; });
     for (let i = 1; i <= slots.length; i++) {
         if (S.stageStates[i] === undefined) S.stageStates[i] = (i === 1);
     }
 
-    // 同步更新所有 plots 的 stageIdx（用数组下标查 newMap，与 assignedChunks 约定一致）
+    // 同步更新所有 plots 的 stageIdx
     mainArr.forEach((plot, i) => {
         const mapped = newMap[i] ?? newMap[String(i)];
         if (mapped !== undefined) {
@@ -11731,7 +11831,7 @@ function niConfirmStageMap() {
         S.stageTitles[i+1] = slot.label;
     });
 
-    // 阶段一开启时，自动开启该阶段初次登场的角色（主角跳过），与 niToggleStage 行为一致
+    // 阶段一开启时，自动开启该阶段初次登场的角色，与 niToggleStage 行为一致
     S.characters.forEach(c => {
         if (c.role === '主角') return;
         if (getCharFirstStage(c) !== 1) return;
@@ -11760,7 +11860,7 @@ window.niTbGenerateInfer = niTbGenerateInfer;
 
 
 // ============================================================
-// 穿书模式 (Transbook Mode)  ·  ni-tb-*
+// 穿书模式   ·  ni-tb-*
 // ============================================================
 
 // ── 默认提示词 ──────────────────────────────────────────────
@@ -12597,10 +12697,10 @@ function niTbCardHTML(node, idx, displayIdx = idx) {
         ? `<span class="ni-tb-sc-num-meta">${niEsc(metaParts.join(' · '))}</span>`
         : '';
 
-    // 事件列表 (sub_notes)
+    // 事件列表
     const subNotes = (!node.locked && Array.isArray(node.sub_notes) && node.sub_notes.length)
         ? node.sub_notes : [];
-    // 伏笔列表 (branch_links 中以【伏笔】开头的条目)
+    // 伏笔列表
     const foreshadows = (!node.locked && Array.isArray(node.branch_links))
         ? node.branch_links
             .filter(l => l.startsWith('【伏笔】'))
@@ -12687,7 +12787,7 @@ function niTbAnimateTo(newCur, nodes) {
         }
     });
 
-    // 新增卡片（带入场动画）
+    // 新增卡片
     newSlots.forEach((s, i) => {
         const n  = view.nodes[s.idx];
         const gi = n._globalIdx ?? s.idx;
@@ -12837,9 +12937,9 @@ function niTbShowStageDone(stageIdx) {
 
 // ── AI 推进提示词注入 ────────────────────────────────────────
 
-// 待注入的推进提示词（存放至下次 CHAT_COMPLETION_PROMPT_READY）
+// 待注入的推进提示词
 let _tbPendingAdvancePrompt = '';
-// 已发送过首次激活提示词的节点对 key 集合（防止反复勾选重复触发）
+// 已发送过首次激活提示词的节点对 key 集合
 const _tbAdvanceSent = new Set();
 
 function niTbWriteAdvancePrompt(nodeA, nodeB) {
@@ -12860,7 +12960,7 @@ function niTbWriteAdvancePrompt(nodeA, nodeB) {
     console.log('[NI-TB] 推进提示词已就绪，等待下次发送生效');
 }
 
-// 开场提示词：故事最开始（第一个节点尚未完成）时注入
+// 开场提示词：故事最开始时注入
 function niTbWriteOpeningPrompt() {
     if (_tbAdvanceSent.has('__opening__')) return;
     _tbAdvanceSent.add('__opening__');
@@ -12877,7 +12977,7 @@ function niTbWriteOpeningPrompt() {
     console.log('[NI-TB] 开场提示词已就绪，等待下次发送生效');
 }
 
-// 在 onPromptReady 中被调用（注入穿书推进提示词）
+// 在 onPromptReady 中被调用
 function niTbInjectAdvancePromptIfPending(eventData, doInject) {
     if (!_tbPendingAdvancePrompt) return;
     const content = _tbPendingAdvancePrompt;
@@ -12909,10 +13009,10 @@ async function niTbGenerateInfer() {
         const ctx   = getContext();
         niTbReconcileCurrentNode(nodes);
 
-        // 当前节点（取当前轮播中心节点）
+        // 当前节点
         const curNode = nodes[S.tbCurIdx] || nodes[0] || { title: '（未知）', body: '' };
 
-        // 角色人设（只取已启用的角色，最多8个防止 token 过长）
+        // 角色人设
         const userSubCfg = niGetUserSubConfig();
         const charLines = (S.characters || [])
             .map((c, idx) => ({ c, idx }))
@@ -12939,7 +13039,7 @@ async function niTbGenerateInfer() {
             ? charLines.join('\n\n')
             : '（暂无角色人设数据，请在角色页配置）';
 
-        // 最近对话（取最近 8 条，过滤空消息）
+        // 最近对话
         const recentMsgs = (ctx?.chat || [])
             .filter(m => m.mes && m.mes.trim())
             .slice(-8)
@@ -13018,7 +13118,7 @@ async function niTbGenerateInfer() {
 
 // ── 状态栏挂载 / 卸载 ────────────────────────────────────────
 
-// ── 将状态栏 CSS 注入到 document.head（只注入一次）──────────
+// ── 将状态栏 CSS 注入到 document.head──────────
 function niTbInjectCSS() {
     if (document.getElementById('ni-tb-injected-css')) return;
     const style = document.createElement('style');
@@ -13154,7 +13254,7 @@ function niTbRenderStoryBar() {
     // 移除旧实例
     document.getElementById('ni-storybar')?.remove();
 
-    // 找最后一条 AI 消息的 .mes_text
+    // 找最后一条 AI 消息的.mes_text
     const allMes = document.querySelectorAll('.mes');
     let lastAiMes = null;
     for (let i = allMes.length - 1; i >= 0; i--) {
@@ -13262,7 +13362,7 @@ function niTbBindBarEvents() {
         }
     });
 
-    // 阶段列表点击（委托绑定在父级 stage-panel 上，不受 innerHTML 重置影响）
+    // 阶段列表点击
     document.getElementById('ni-tb-stage-panel')?.addEventListener('click', (e) => {
         const row = e.target.closest('.ni-tb-sp-row');
         if (!row) return;
@@ -13325,7 +13425,7 @@ function niTbRebuildStageList() {
     const list   = document.getElementById('ni-tb-stage-list');
     if (!list) return;
     list.innerHTML = niTbBuildStageListHtml(stages, curNode?.stageIdx);
-    // 重新绑定点击（父级委托在 bindBarEvents 中，此处不重复绑定）
+    // 重新绑定点击
     niRefreshStorybarTheme();
 }
 
@@ -13338,9 +13438,9 @@ function niTbInitSettingsUI() {
     const cfg = extension_settings[EXT_NAME];
     if (niUpgradeLegacyTbDefaultPrompts(cfg)) saveSettingsDebounced();
 
-    // 穿书模式 UI 绑定（仅绑定一次）
+    // 穿书模式 UI 绑定
     if (!_niTbUIBound) {
-        // 设置面板按钮 & 提示词面板按钮（用事件委托，避免元素未渲染时绑定失败）
+        // 设置面板按钮 & 提示词面板按钮
         const $appTb = typeof $ !== 'undefined' ? $(document.getElementById('ni-app') || document) : null;
         if ($appTb) {
             $appTb.on('click', '#ni-tb-cfg-btn', () => niTogglePanel('ni-tb-cfg-panel', 'ni-tb-cfg-btn'));
@@ -13352,7 +13452,7 @@ function niTbInitSettingsUI() {
             });
         }
 
-        // 设置项：状态栏（二选一互斥）
+        // 设置项：状态栏
         document.getElementById('ni-tb-display-statusbar')?.addEventListener('change', function () {
             extension_settings[EXT_NAME].tbDisplayStatusbar = this.checked;
             if (this.checked) {
@@ -13371,7 +13471,7 @@ function niTbInitSettingsUI() {
             saveSettingsDebounced();
         });
 
-        // 设置项：弹窗（二选一互斥）
+        // 设置项：弹窗
         document.getElementById('ni-tb-display-popup')?.addEventListener('change', function () {
             extension_settings[EXT_NAME].tbDisplayPopup = this.checked;
             if (this.checked) {
@@ -13395,7 +13495,7 @@ function niTbInitSettingsUI() {
             });
         }
 
-        // 推进提示词（事件绑定只做一次）
+        // 推进提示词
         const advEl = document.getElementById('ni-tb-advance-prompt');
         if (advEl) {
             advEl.addEventListener('input', function () {
@@ -13410,7 +13510,7 @@ function niTbInitSettingsUI() {
             saveSettingsDebounced();
         });
 
-        // 持续提示词（事件绑定只做一次）
+        // 持续提示词
         const ongoingEl = document.getElementById('ni-tb-ongoing-prompt');
         if (ongoingEl) {
             ongoingEl.addEventListener('input', function () {
@@ -13425,7 +13525,7 @@ function niTbInitSettingsUI() {
             saveSettingsDebounced();
         });
 
-        // 推演提示词（事件绑定只做一次）
+        // 推演提示词
         const inferEl = document.getElementById('ni-tb-infer-prompt');
         if (inferEl) {
             inferEl.addEventListener('input', function () {
@@ -13466,7 +13566,7 @@ function niTbInitSettingsUI() {
         });
 
         _niTbUIBound = true;
-    } // end if (!_niTbUIBound)
+    } // end if
 
     // ── 每次打开设置页都需要同步的 UI 值 ──────────────────────
     const chk = document.getElementById('ni-tb-chk');
@@ -13538,7 +13638,7 @@ window.syncSettingsToUI = _niSyncSettingsToUIPatched;
 
 // ── onPromptReady 补丁：注入穿书推进提示词 ───────────────────
 // 直接在 CHAT_COMPLETION_PROMPT_READY 上追加一个独立监听
-// 注意：此处不再重复 import，而是直接追加到 eventData.chat（system 消息），
+// 注意：此处不再重复 import，而是直接追加到 eventData.chat，
 // 与 onPromptReady 内 doInject 的 fallback 逻辑一致，避免双重 import 开销。
 jQuery(document).ready(function () {
     if (typeof eventSource !== 'undefined' && typeof event_types !== 'undefined') {
@@ -13639,7 +13739,7 @@ jQuery(document).ready(function () {
     }
     setTimeout(() => niTbInitSettingsUI(), 100);
 
-    // niConfirmStageMap 后刷新状态栏（劫持已暴露的 window.niConfirmStageMap）
+    // niConfirmStageMap 后刷新状态栏
     const _origConfirm = window.niConfirmStageMap;
     if (typeof _origConfirm === 'function') {
         window.niConfirmStageMap = function () {
@@ -13657,7 +13757,7 @@ jQuery(document).ready(function () {
 console.log('[NI-TB] 穿书模式模块已加载');
 
 // ══════════════════════════════════════════════════════════════
-// 穿书弹窗（小票风格）控制逻辑
+// 穿书弹窗控制逻辑
 // ══════════════════════════════════════════════════════════════
 (function niPopupInit() {
     'use strict';
@@ -13687,11 +13787,11 @@ console.log('[NI-TB] 穿书模式模块已加载');
     let _popInferring = false;
     let _popInferExp = true;
     let _popStageOpen = false;
-    let _popCurIdx = 0;   // 当前节点索引（在穿书模式运行时从 S.tbCurIdx 同步）
+    let _popCurIdx = 0;   // 当前节点索引
 
     // ── 从主插件数据拉取节点/阶段信息 ──
     function niPopGetState() {
-        // 优先通过主模块暴露的函数读取（数据存于 S.plots 而非 extension_settings）
+        // 优先通过主模块暴露的函数读取
         if (typeof window.niGetTbNodes === 'function' && typeof window.niGetTbStages === 'function') {
             const nodes  = window.niGetTbNodes();
             const stages = window.niGetTbStages();
@@ -13802,7 +13902,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
             });
 
             g.appendChild(row);
-            // 展开区：概括 + 事件 + 伏笔（仅高亮节点显示）
+            // 展开区：概括 + 事件 + 伏笔
             {
                 const hasBody  = !!n.body;
                 const hasSubs  = Array.isArray(n.sub_notes)   && n.sub_notes.length > 0;
@@ -13896,7 +13996,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
         sub.textContent = '✨ ' + txt;
     }
 
-    // ── 更新底部时间（AI 最后一条回复时间）──
+    // ── 更新底部时间──
     function niPopSyncTime() {
         const el = document.getElementById('ni-pop-time');
         if (!el) return;
@@ -13922,7 +14022,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
                        + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
     }
 
-    // ── 仅更新高亮和滚动，不重建列表（供 ↑↓ 使用）──
+    // ── 仅更新高亮和滚动，不重建列表──
     function niPopSetActive(newIdx) {
         const { nodes, stages } = niPopGetState();
         if (newIdx < 0 || newIdx >= nodes.length) return;
@@ -13960,7 +14060,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
         const { nodes, stages } = niPopGetState();
         const view = niPopGetStageView(nodes, _popCurIdx);
         // 注意：_popCurIdx 由 niPopOpen 在弹窗打开时从外部同步一次，
-        // 之后完全由弹窗内部（↑↓ 点击、行点击）管理，不再从外部覆盖
+        // 之后完全由弹窗内部管理，不再从外部覆盖
         const activeStages = stages.filter(s => s.enabled !== false);
         const curStageLocalIdx = Math.max(0, activeStages.findIndex(s => s.stageIdx === view.stageIdx));
         niPopBuildStages(stages, curStageLocalIdx);
@@ -14009,7 +14109,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
     window.niPopOpen  = niPopOpen;
     window.niPopClose = niPopClose;
 
-    // ── 显示/隐藏浮动按钮（由设置项控制）──
+    // ── 显示/隐藏浮动按钮──
     function niPopSetVisible(show) {
         const fab = q('ni-fab'), ring = q('ni-fab-ring');
         if (fab)  fab.style.display  = show ? 'flex' : 'none';
@@ -14133,7 +14233,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
             if (btn) btn.classList.add('loading');
             if (lbl) lbl.textContent = '推演中…';
             q('ni-pop-infer-sec')?.classList.remove('vis');
-            // 调用主插件推演函数（如已挂载）
+            // 调用主插件推演函数
             const doInfer = window.niTbGenerateInfer || window.niTbDoInfer || window.niDoInfer;
             if (typeof doInfer === 'function') {
                 doInfer().then(() => niPopInferDone(btn, lbl)).catch(() => niPopInferDone(btn, lbl));
@@ -14166,7 +14266,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
         _popInferring = false;
         if (btn) btn.classList.remove('loading');
         if (lbl) lbl.textContent = '✦ 重新推演';
-        // 从主插件读取推演结果：优先从 window._niS（运行时状态对象），兼容旧路径
+        // 从主插件读取推演结果：优先从 window._niS，兼容旧路径
         const _S = (typeof window._niS !== 'undefined') ? window._niS
             : ((typeof extension_settings !== 'undefined' && typeof EXT_NAME !== 'undefined')
                ? extension_settings[EXT_NAME] : null);
@@ -14209,7 +14309,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
     }
     window.niPopSyncVisibility = niPopSyncVisibility;
 
-    // ── 注入弹窗 CSS 到 document.head（使元素移至 body 后样式仍生效）──
+    // ── 注入弹窗 CSS 到 document.head──
     // ── 本插件为 ES Module，直接运行在酒馆主页面，document/window 即主页面 ──
     const _niPopDoc = document;
     const _niPopWin = window;
@@ -14238,10 +14338,10 @@ console.log('[NI-TB] 穿书模式模块已加载');
         _niPopDoc.head.appendChild(style);
     }
 
-    // ── 初始化入口（在 DOM ready 后调用）──
+    // ── 初始化入口──
     function niPopBootstrap() {
         niPopInjectCSS();
-        // ── 将 FAB、FAB-ring 和弹窗容器移动到主页面 body（脱离 iframe 限制）──
+        // ── 将 FAB、FAB-ring 和弹窗容器移动到主页面 body──
         const fabRing = document.getElementById('ni-fab-ring');
         const fab     = document.getElementById('ni-fab');
         const popWrap = document.getElementById('ni-popup-wrap');

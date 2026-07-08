@@ -1,10 +1,10 @@
 <div class="ni-app" id="ni-app">
   <div class="ni-scroll" id="ni-scroll">
 
-    <!-- ========== PAGE: PROCESS ========== -->
+    <!-- ========== PAGE: PROCESS ==========-->
     <div class="ni-page on" id="ni-pg-process">
 
-      <!-- Upload Card -->
+      <!-- Upload Card-->
       <div class="ni-card">
         <div class="ni-ctitle"><span class="ni-ctitle-label"><i class="ti ti-file-text"></i>上传小说</span></div>
         <div class="ni-upload-panel">
@@ -26,7 +26,7 @@
         </div>
       </div>
 
-      <!-- Clean Card -->
+      <!-- Clean Card-->
       <div class="ni-card" id="ni-cp-card">
         <div class="ni-ctitle">
           <span class="ni-ctitle-label"><i class="ti ti-scissors"></i>清洗压缩</span>
@@ -40,14 +40,14 @@
         <div class="ni-tool-row">
           <button class="ni-icon-btn" id="ni-clean-cfg-btn" title="API 设置"><i class="ti ti-settings"></i></button>
           <button class="ni-icon-btn" id="ni-prompt-btn" title="编辑提示词"><i class="ti ti-code"></i></button>
-          <!-- 静止态：开始/续跑按钮 -->
+          <!-- 静止态：开始/续跑按钮-->
           <button class="ni-btn ni-btn-p ni-btn-inline" id="ni-btn-clean" disabled>
             <i class="ti ti-player-play"></i>开始全自动清洗
           </button>
           <button class="ni-btn ni-btn-ghost ni-btn-inline" id="ni-btn-retry" style="display:none">
             <i class="ti ti-player-play"></i>续跑清洗
           </button>
-          <!-- 运行态：跳过 + 暂停（清洗中替换大按钮位置） -->
+          <!-- 运行态：跳过 + 暂停-->
           <button class="ni-ctrl-btn ni-ctrl-skip ni-btn-inline" id="ni-btn-skip" style="display:none">
             <i class="ti ti-player-skip-forward"></i>跳过本段
           </button>
@@ -106,7 +106,7 @@
         </div>
       </div>
 
-      <!-- Style Card -->
+      <!-- Style Card-->
       <div class="ni-card" id="ni-style-card">
         <div class="ni-ctitle">
           <span class="ni-ctitle-label"><i class="ti ti-writing"></i>文风</span>
@@ -125,9 +125,9 @@
           </button>
         </div>
 
-        <!-- 设置面板 -->
+        <!-- 设置面板-->
         <div class="ni-api-panel" id="ni-style-cfg-panel">
-          <!-- 模式切换 -->
+          <!-- 模式切换-->
           <div class="ni-field" style="margin-bottom:10px;">
             <label>采样来源</label>
             <select id="ni-style-mode">
@@ -136,7 +136,7 @@
             </select>
           </div>
 
-          <!-- 采样模式配置 -->
+          <!-- 采样模式配置-->
           <div id="ni-style-sample-cfg">
             <div class="ni-tool-row" style="margin-bottom:8px;">
               <span class="ni-tool-label">采样字数</span>
@@ -151,7 +151,7 @@
             </div>
           </div>
 
-          <!-- 范文模式输入框 -->
+          <!-- 范文模式输入框-->
           <div id="ni-style-manual-cfg" style="display:none;">
             <div class="ni-field" style="margin-bottom:0;">
               <label>粘贴范文</label>
@@ -160,7 +160,7 @@
           </div>
         </div>
 
-        <!-- 提示词编辑框 -->
+        <!-- 提示词编辑框-->
         <div class="ni-prompt-box" id="ni-style-pb">
           <div class="ni-pt-wrap">
             <textarea id="ni-style-pt-content" class="ni-pt-textarea" rows="7" spellcheck="false"></textarea>
@@ -168,7 +168,7 @@
           </div>
         </div>
 
-        <!-- 结果区（生成后显示，可收起） -->
+        <!-- 结果区-->
         <div id="ni-style-result-wrap" style="display:none;margin-top:10px;">
           <div id="ni-style-result-toggle" class="ni-ctitle-toggle" style="font-size:11px;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.05em;font-weight:500;margin-bottom:6px;width:100%;" title="收起/展开">
             <span>文风执行指南</span>
@@ -180,7 +180,7 @@
         </div>
       </div>
 
-      <!-- Vectorize Card -->
+      <!-- Vectorize Card-->
       <div class="ni-card" id="ni-vp-card">
         <div class="ni-ctitle">
           <span class="ni-ctitle-label"><i class="ti ti-vector"></i>向量化</span>
@@ -254,14 +254,14 @@
         </div>
       </div>
 
-      <!-- Injection Settings Card (accordion UI) -->
+      <!-- Injection Settings Card-->
       <div class="ni-card ni-inj-card">
         <div class="ni-ctitle ni-ctitle-toggle" id="ni-inj-toggle">
           <span class="ni-ctitle-label"><i class="ti ti-settings"></i>注入设置</span>
         </div>
         <div id="ni-inj-body" style="display:none">
 
-          <!-- Accordion: 全局提示词 -->
+          <!-- Accordion: 全局提示词-->
           <div class="ni-inj-acc-header" data-ni-acc="global">
             <div class="ni-inj-acc-left">
               <i class="ti ti-code"></i><span>全局提示词</span><i class="ti ti-chevron-down ni-inj-acc-chevron"></i>
@@ -316,7 +316,7 @@
             </div>
           </div>
 
-          <!-- Accordion: 角色人设 -->
+          <!-- Accordion: 角色人设-->
           <div class="ni-inj-acc-header" data-ni-acc="char">
             <div class="ni-inj-acc-left">
               <i class="ti ti-user"></i><span>角色人设</span><i class="ti ti-chevron-down ni-inj-acc-chevron"></i>
@@ -347,7 +347,7 @@
             </div>
           </div>
 
-          <!-- Accordion: 阶段剧情 -->
+          <!-- Accordion: 阶段剧情-->
           <div class="ni-inj-acc-header" data-ni-acc="plot">
             <div class="ni-inj-acc-left">
               <i class="ti ti-timeline"></i><span>阶段剧情（未向量）</span><i class="ti ti-chevron-down ni-inj-acc-chevron"></i>
@@ -378,7 +378,7 @@
             </div>
           </div>
 
-          <!-- Accordion: 偏差注入 -->
+          <!-- Accordion: 偏差注入-->
           <div class="ni-inj-acc-header" data-ni-acc="dev">
             <div class="ni-inj-acc-left">
               <i class="ti ti-ruler-measure"></i><span>偏差注入</span><i class="ti ti-chevron-down ni-inj-acc-chevron"></i>
@@ -409,7 +409,7 @@
             </div>
           </div>
 
-          <!-- Accordion: 向量块 -->
+          <!-- Accordion: 向量块-->
           <div class="ni-inj-acc-header" data-ni-acc="vec">
             <div class="ni-inj-acc-left">
               <i class="ti ti-vector"></i><span>向量块</span><i class="ti ti-chevron-down ni-inj-acc-chevron"></i>
@@ -451,7 +451,7 @@
             </div>
           </div>
 
-          <!-- Accordion: 世界设定 -->
+          <!-- Accordion: 世界设定-->
           <div class="ni-inj-acc-header" data-ni-acc="world">
             <div class="ni-inj-acc-left">
               <i class="ti ti-world"></i><span>世界设定</span><i class="ti ti-chevron-down ni-inj-acc-chevron"></i>
@@ -482,7 +482,7 @@
             </div>
           </div>
 
-          <!-- Accordion: 文风 -->
+          <!-- Accordion: 文风-->
           <div class="ni-inj-acc-header" data-ni-acc="style">
             <div class="ni-inj-acc-left">
               <i class="ti ti-writing"></i><span>文风</span><i class="ti ti-chevron-down ni-inj-acc-chevron"></i>
@@ -518,10 +518,10 @@
 
     </div>
 
-    <!-- ========== PAGE: PLOT ========== -->
+    <!-- ========== PAGE: PLOT ==========-->
     <div class="ni-page" id="ni-pg-plot">
 
-      <!-- Deviation Analysis Card -->
+      <!-- Deviation Analysis Card-->
       <div class="ni-card">
         <div class="ni-ctitle">
           <span class="ni-ctitle-label"><i class="ti ti-ruler-measure"></i>前文偏差分析</span>
@@ -584,7 +584,7 @@
         </div>
       </div>
 
-      <!-- 2. 穿书模式 -->
+      <!-- 2. 穿书模式-->
       <div class="ni-card">
         <div class="ni-ctitle" style="position:relative">
           <span class="ni-ctitle-label" style="min-width:65px"><i class="ti ti-book-2"></i>穿书模式</span>
@@ -600,7 +600,7 @@
         </div>
         <p class="ni-desc" style="margin-top:6px"><i class="ti ti-alert-circle" style="font-size:12px;margin-right:3px;vertical-align:-1px"></i>在正文状态栏中管理剧情进度。AI 将根据节点完成情况自动推进剧情。</p>
 
-        <!-- 设置面板 -->
+        <!-- 设置面板-->
         <div class="ni-api-panel" id="ni-tb-cfg-panel">
           <div class="ni-field" style="margin-bottom:0">
             <label style="margin-bottom:8px"><i class="ti ti-layout-list" style="font-size:12px;margin-right:4px;vertical-align:-1px"></i>剧情进度显示方式</label>
@@ -652,11 +652,11 @@
           </div>
         </div>
 
-        <!-- 提示词面板 -->
+        <!-- 提示词面板-->
         <div class="ni-prompt-box" id="ni-tb-pb">
           <div class="ni-pt-wrap" style="flex-direction:column;gap:10px">
 
-            <!-- 推进提示词 -->
+            <!-- 推进提示词-->
             <div>
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
                 <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-player-play" style="font-size:11px"></i> AI 推进提示词（节点切换时一次性注入）</label>
@@ -665,7 +665,7 @@
               <textarea id="ni-tb-advance-prompt" class="ni-pt-textarea" rows="7" spellcheck="false" style="font-size:11px;line-height:1.6;padding:8px 10px;border:.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-secondary);color:var(--color-text-primary);resize:vertical;width:100%;font-family:inherit"></textarea>
             </div>
 
-            <!-- 持续提示词 -->
+            <!-- 持续提示词-->
             <div>
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
                 <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-refresh" style="font-size:11px"></i> 持续提示词（每条消息都注入）</label>
@@ -674,7 +674,7 @@
               <textarea id="ni-tb-ongoing-prompt" class="ni-pt-textarea" rows="4" spellcheck="false" style="font-size:11px;line-height:1.6;padding:8px 10px;border:.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-secondary);color:var(--color-text-primary);resize:vertical;width:100%;font-family:inherit"></textarea>
             </div>
 
-            <!-- 沉浸提示词 -->
+            <!-- 沉浸提示词-->
             <div>
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
                 <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-eye" style="font-size:11px"></i> 沉浸提示词（沉浸开关开启时追加）</label>
@@ -683,7 +683,7 @@
               <textarea id="ni-tb-immersion-prompt" class="ni-pt-textarea" rows="7" spellcheck="false" style="font-size:11px;line-height:1.6;padding:8px 10px;border:.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-secondary);color:var(--color-text-primary);resize:vertical;width:100%;font-family:inherit"></textarea>
             </div>
 
-            <!-- 推演提示词 -->
+            <!-- 推演提示词-->
             <div>
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
                 <label style="font-size:12px;color:var(--color-text-secondary)"><i class="ti ti-chart-line" style="font-size:11px"></i> 后文推演提示词</label>
@@ -697,8 +697,8 @@
         </div>
       </div>
 
-      <!-- Plot List Card -->
-      <!-- World Settings Card -->
+      <!-- Plot List Card-->
+      <!-- World Settings Card-->
       <div class="ni-card" id="ni-world-card">
         <div class="ni-ctitle ni-ctitle-toggle" id="ni-world-toggle-head" style="cursor:pointer;user-select:none;">
           <span class="ni-ctitle-label"><i class="ti ti-world"></i>世界设定</span>
@@ -721,7 +721,7 @@
           </button>
         </div>
 
-        <!-- 阶段划分面板 -->
+        <!-- 阶段划分面板-->
         <div class="ni-stage-panel" id="ni-stage-panel" style="display:none">
           <div class="ni-stage-panel-head">
             <span class="ni-stage-panel-title">阶段划分</span>
@@ -766,7 +766,7 @@
             <button class="ni-char-edit-btn" id="ni-plot-edit-btn" title="编辑事件"><i class="ti ti-pencil"></i>编辑</button>
           </div>
         </div>
-        <!-- 剧情事件编辑 Modal -->
+        <!-- 剧情事件编辑 Modal-->
         <div class="ni-modal-bg" id="ni-plot-modal" style="display:none">
           <div class="ni-modal" style="width:400px">
             <div class="ni-modal-title" id="ni-plot-modal-title">添加事件</div>
@@ -812,7 +812,7 @@
             </div>
           </div>
         </div>
-        <!-- 删除选择模式提示条 -->
+        <!-- 删除选择模式提示条-->
         <div id="ni-plot-del-bar" style="display:none" class="ni-char-del-bar">
           <span>点击事件选择删除</span>
           <div>
@@ -827,7 +827,7 @@
       </div>
     </div>
 
-    <!-- ========== PAGE: CHARACTERS ========== -->
+    <!-- ========== PAGE: CHARACTERS ==========-->
     <div class="ni-page" id="ni-pg-char">
       <div class="ni-card ni-user-sub-card">
         <div class="ni-user-sub-wrap">
@@ -904,11 +904,11 @@
           </div>
         </div>
         <div class="ni-char-toolbar">
-          <!-- 第一排：阶段抽屉 + 全开全关 -->
+          <!-- 第一排：阶段抽屉 + 全开全关-->
           <div class="ni-toolbar-row" id="ni-char-stage-row" style="display:none">
             <div style="flex:1"></div>
             <div class="ni-stage-drawer" id="ni-stage-drawer">
-              <!-- 按初次登场阶段批量操作（主角不受影响） -->
+              <!-- 按初次登场阶段批量操作-->
               <button class="ni-drawer-trigger" id="ni-drawer-trigger" title="按初次登场阶段批量操作（主角不受影响）">
                 <i class="ti ti-users" style="font-size:13px"></i>
                 <span id="ni-drawer-label">按阶段选择</span>
@@ -928,12 +928,12 @@
             <button class="ni-bulk-btn on" id="ni-char-enable-all" title="开启当前分类全部角色注入"><i class="ti ti-check"></i>全部开启</button>
             <button class="ni-bulk-btn off" id="ni-char-disable-all" title="关闭当前分类全部角色注入"><i class="ti ti-x"></i>全部关闭</button>
           </div>
-          <!-- 若无阶段时只显示全开全关（单排） -->
+          <!-- 若无阶段时只显示全开全关-->
           <div class="ni-toolbar-row" id="ni-char-bulk-row">
             <button class="ni-bulk-btn on" id="ni-char-enable-all-simple" title="开启当前分类全部角色注入"><i class="ti ti-check"></i>全部开启</button>
             <button class="ni-bulk-btn off" id="ni-char-disable-all-simple" title="关闭当前分类全部角色注入"><i class="ti ti-x"></i>全部关闭</button>
           </div>
-          <!-- 第二排：tab + 增删 -->
+          <!-- 第二排：tab + 增删-->
           <div class="ni-tabs-row">
             <div class="ni-tab-row" id="ni-char-tab-row">
               <button class="ni-tab on" data-role="主角">主角</button>
@@ -952,7 +952,7 @@
       </div>
     </div>
 
-    <!-- 添加角色弹窗 -->
+    <!-- 添加角色弹窗-->
     <div class="ni-modal-bg" id="ni-add-char-modal" style="display:none">
       <div class="ni-modal">
         <div class="ni-modal-title">添加角色</div>
@@ -999,10 +999,10 @@
       </div>
     </div>
 
-    <!-- ========== PAGE: SETTINGS ========== -->
+    <!-- ========== PAGE: SETTINGS ==========-->
     <div class="ni-page" id="ni-pg-settings">
 
-      <!-- 1. 插件开关 -->
+      <!-- 1. 插件开关-->
       <div class="ni-card">
         <div class="ni-ctitle" style="margin-bottom:0;justify-content:flex-start;gap:8px;position:relative">
           <span class="ni-ctitle-label" style="min-width:65px"><i class="ti ti-power"></i>插件总开关</span>
@@ -1020,7 +1020,7 @@
         </div>
       </div>
 
-      <!-- 全局提示词面板 -->
+      <!-- 全局提示词面板-->
       <div class="ni-prompt-box" id="ni-global-pb">
         <div class="ni-global-source-row">
           <label class="ni-toggle-label">
@@ -1168,7 +1168,7 @@
         </div>
       </div>
 
-      <!-- 3. 小说库 -->
+      <!-- 3. 小说库-->
       <div class="ni-card">
         <div class="ni-ctitle">
           <span class="ni-ctitle-label"><i class="ti ti-books"></i>小说库</span>
@@ -1178,7 +1178,7 @@
         <div class="ni-tool-row" style="margin-bottom:8px">
           <button class="ni-btn ni-btn-p ni-btn-inline" id="ni-lib-save-btn"><i class="ti ti-device-floppy"></i>保存</button>
         </div>
-        <!-- 保存快照输入框（展开） -->
+        <!-- 保存快照输入框-->
         <div class="ni-lib-save-panel-box" id="ni-lib-save-panel" style="display:none">
           <div class="ni-field">
             <label>快照名称</label>
@@ -1192,7 +1192,7 @@
         <div id="ni-lib-list" style="margin-top:8px"></div>
       </div>
 
-      <!-- 3. 导入/导出 -->
+      <!-- 3. 导入/导出-->
       <div class="ni-card">
         <div class="ni-ctitle"><span class="ni-ctitle-label"><i class="ti ti-transfer"></i>导入 / 导出</span></div>
         <p class="ni-desc">将当前所有设置（清洗文本、文风、剧情节点、角色人设、阶段划分、API 配置）及向量数据打包为 ZIP 文件，可用于跨设备迁移或备份恢复。旧版 JSON 文件仍可导入（不含向量）。</p>
@@ -1204,7 +1204,7 @@
         <div class="ni-import-result" id="ni-import-result" style="display:none"></div>
       </div>
 
-      <!-- 4. 清除缓存 -->
+      <!-- 4. 清除缓存-->
       <div class="ni-card">
         <div class="ni-ctitle"><span class="ni-ctitle-label"><i class="ti ti-trash"></i>清除缓存</span></div>
         <p class="ni-desc">清除本插件在 IndexedDB 中存储的向量缓存（不影响设置与剧情数据）。</p>
@@ -1217,7 +1217,7 @@
 
     </div>
 
-    <!-- ========== PAGE: STAGES ========== -->
+    <!-- ========== PAGE: STAGES ==========-->
     <div class="ni-page" id="ni-pg-stage">
       <div class="ni-card">
         <div class="ni-ctitle" id="ni-stage-card-title">
@@ -1269,7 +1269,7 @@
 
   </div>
 
-  <!-- Bottom Nav -->
+  <!-- Bottom Nav-->
   <div class="ni-btm-nav">
     <button class="ni-nav-btn on" data-page="process"><i class="ti ti-tool"></i>处理</button>
     <button class="ni-nav-btn" data-page="plot"><i class="ti ti-sitemap"></i>剧情</button>
@@ -1279,7 +1279,7 @@
   </div>
 </div>
 
-<!-- ══ 穿书弹窗（小票风格）══ -->
+<!-- ══ 穿书弹窗══-->
 <style>
 #ni-fab{position:fixed;width:40px;height:40px;border-radius:50%;z-index:9999;cursor:grab;user-select:none;background:linear-gradient(135deg,#b8a8f8 0%,#9ac8f0 40%,#f0a8d0 100%);box-shadow:0 4px 18px rgba(160,130,220,.38),0 1px 4px rgba(160,130,220,.2),inset 0 1px 2px rgba(255,255,255,.5);display:none;align-items:center;justify-content:center;transition:transform .22s cubic-bezier(.34,1.56,.64,1),box-shadow .22s}
 #ni-fab::before{content:'';position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.45) 0%,transparent 65%);pointer-events:none}
