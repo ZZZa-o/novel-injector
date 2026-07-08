@@ -663,6 +663,7 @@ const DEFAULT_SETTINGS = {
     vecRateLimit: 3,    // 向量化每分钟最多请求次数（0=不限）
     vecConcurrency: 1,  // 1=串行；>1=最大并发请求数；0按串行兼容
     pluginEnabled: true,  // 插件总开关
+    topbarIconVisible: true, // 酒馆顶部栏图标显示开关
     themePreset: 'default',
     themePrimary: NI_THEME_DEFAULT.primary,
     themeSuccess: NI_THEME_DEFAULT.success,
@@ -1727,6 +1728,9 @@ function syncSettingsToUI() {
 const q  = sel => document.querySelector(sel);
 const qa = sel => document.querySelectorAll(sel);
 const sv = (sel, val) => { const el = q(sel); if (el) el.value = val; };
+const NI_ICON_GUARD_STYLE_ID = 'ni-icon-font-guard';
+let _niIconGuardObserver = null;
+let _niExtensionsMenuObserver = null;
 const niCfgInt = (sel, fallback) => {
     const n = parseInt(q(sel)?.value, 10);
     return Number.isFinite(n) ? n : fallback;
@@ -1740,6 +1744,154 @@ const niBoundIntValue = (value, fallback, min = 0, max = 9999) => {
 const niCfgBoundInt = (sel, fallback, min = 0, max = 9999) => {
     return niBoundIntValue(q(sel)?.value, fallback, min, max);
 };
+
+function niEnsureIconFontGuard() {
+    const head = document.head;
+    if (!head) return;
+    const css = `
+#ni_drawer_icon.drawer-icon.fa-solid,
+#ni_drawer_icon.drawer-icon.fa-solid::before,
+#ni-toggle-topbar-icon .fa-solid,
+#ni-toggle-topbar-icon .fa-solid::before {
+  font-family: "Font Awesome 6 Free", "Font Awesome 6 Pro", "Font Awesome 5 Free", FontAwesome !important;
+  font-weight: 900 !important;
+  font-style: normal !important;
+}
+.ni-app .ti,
+.ni-app .ti::before,
+#ni-storybar .ti,
+#ni-storybar .ti::before {
+  font-family: "tabler-icons" !important;
+  speak: none;
+  font-style: normal !important;
+  font-weight: normal !important;
+  font-variant: normal;
+  line-height: 1;
+  text-transform: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.ni-app.ni-ali-icons .ti,
+.ni-app.ni-ali-icons .ti::before,
+.ni-ali-icons #ni-storybar .ti,
+.ni-ali-icons #ni-storybar .ti::before {
+  font-family: "NI-AliIcon" !important;
+  font-weight: normal !important;
+}
+`.trim();
+    let style = document.getElementById(NI_ICON_GUARD_STYLE_ID);
+    if (!style) {
+        style = document.createElement('style');
+        style.id = NI_ICON_GUARD_STYLE_ID;
+    }
+    if (style.textContent !== css) style.textContent = css;
+    if (style.parentElement !== head || style.nextSibling) head.appendChild(style);
+}
+
+function niStartIconFontGuard() {
+    niEnsureIconFontGuard();
+    [0, 500, 2000].forEach(delay => setTimeout(niEnsureIconFontGuard, delay));
+    if (!_niIconGuardObserver && document.head && typeof MutationObserver !== 'undefined') {
+        _niIconGuardObserver = new MutationObserver(() => niEnsureIconFontGuard());
+        _niIconGuardObserver.observe(document.head, { childList: true });
+    }
+}
+
+function niTopbarIconVisible() {
+    const cfg = extension_settings[EXT_NAME] || {};
+    return (cfg.topbarIconVisible ?? DEFAULT_SETTINGS.topbarIconVisible) !== false;
+}
+
+function niCloseTopbarDrawer() {
+    const icon = $('#ni_drawer_icon');
+    const content = $('#ni_drawer_content');
+    icon.removeClass('openIcon').addClass('closedIcon');
+    content.removeClass('openDrawer').addClass('closedDrawer').attr('data-slide-toggle', 'hidden').css('display', 'none');
+}
+
+function niSyncExtensionsMenuTopbarToggle() {
+    const enabled = niTopbarIconVisible();
+    const item = q('#ni-toggle-topbar-icon');
+    const icon = q('#ni-toggle-topbar-icon .extensionsMenuExtensionButton');
+    const state = q('#ni-toggle-topbar-icon-state');
+    if (item) {
+        item.classList.toggle('ni-topbar-icon-off', !enabled);
+        item.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        item.title = enabled ? '隐藏 Novel Injector 顶栏图标' : '显示 Novel Injector 顶栏图标';
+    }
+    if (icon) icon.className = `fa-fw fa-solid ${enabled ? 'fa-book-open' : 'fa-book'} extensionsMenuExtensionButton`;
+    if (state) state.textContent = enabled ? '开' : '关';
+}
+
+function niSyncTopbarIconVisibility() {
+    const enabled = niTopbarIconVisible();
+    const drawer = q('#ni_drawer');
+    if (drawer) {
+        if (!enabled) niCloseTopbarDrawer();
+        drawer.style.display = enabled ? '' : 'none';
+    }
+    niSyncExtensionsMenuTopbarToggle();
+}
+
+function niEnsureExtensionsMenuTopbarToggle() {
+    const menu = q('#extensionsMenu');
+    if (!menu) return false;
+    let container = q('#ni_topbar_icon_wand_container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'ni_topbar_icon_wand_container';
+        container.className = 'extension_container interactable';
+        container.tabIndex = 0;
+        container.innerHTML = `
+<div id="ni-toggle-topbar-icon" class="list-group-item flex-container flexGap5 interactable" title="隐藏 Novel Injector 顶栏图标" tabindex="0" role="listitem" aria-pressed="true">
+    <div class="fa-fw fa-solid fa-book-open extensionsMenuExtensionButton" aria-hidden="true"></div>
+    <span>Novel Injector 顶栏图标</span>
+    <span id="ni-toggle-topbar-icon-state" class="ni-ext-menu-state">开</span>
+</div>`;
+        const quickCss = q('#quick-css-ext-button');
+        if (quickCss?.parentElement === menu) {
+            menu.insertBefore(container, quickCss);
+        } else {
+            menu.appendChild(container);
+        }
+    }
+    niSyncExtensionsMenuTopbarToggle();
+    return true;
+}
+
+function niSetTopbarIconVisible(visible) {
+    const cfg = extension_settings[EXT_NAME] || {};
+    extension_settings[EXT_NAME] = cfg;
+    cfg.topbarIconVisible = visible !== false;
+    niSyncTopbarIconVisibility();
+    saveSettingsDebounced();
+}
+
+function niStartExtensionsMenuTopbarToggle() {
+    niEnsureExtensionsMenuTopbarToggle();
+    [0, 500, 2000].forEach(delay => setTimeout(niEnsureExtensionsMenuTopbarToggle, delay));
+    $(document)
+        .off('click.niTopbarIconToggle', '#ni-toggle-topbar-icon')
+        .on('click.niTopbarIconToggle', '#ni-toggle-topbar-icon', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            niSetTopbarIconVisible(!niTopbarIconVisible());
+        })
+        .off('keydown.niTopbarIconToggle', '#ni-toggle-topbar-icon')
+        .on('keydown.niTopbarIconToggle', '#ni-toggle-topbar-icon', function(e) {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            e.stopPropagation();
+            niSetTopbarIconVisible(!niTopbarIconVisible());
+        });
+    if (!_niExtensionsMenuObserver && document.body && typeof MutationObserver !== 'undefined') {
+        _niExtensionsMenuObserver = new MutationObserver(() => {
+            niEnsureExtensionsMenuTopbarToggle();
+            niSyncTopbarIconVisibility();
+        });
+        _niExtensionsMenuObserver.observe(document.body, { childList: true, subtree: true });
+    }
+}
 
 function niSyncDevAutoUI({ syncNote = false } = {}) {
     const input = q('#ni-dev-auto-every');
@@ -10198,6 +10350,8 @@ window.niClearAllData = niClearAllData;
 
 
 jQuery(async () => {
+    niStartIconFontGuard();
+    niStartExtensionsMenuTopbarToggle();
 
     // ── 动态注入小说库书卡样式（防止 CSS 缓存导致样式缺失）─────
     {
@@ -10273,6 +10427,7 @@ jQuery(async () => {
             $('#extensions-settings-button').after(drawerHtml);
         }
     }
+    niSyncTopbarIconVisibility();
 
     // ── 在 template 插入 DOM 后，立即将 FAB/popup 挂到 body ──
     if (typeof window.niPopBootstrap === 'function') {
