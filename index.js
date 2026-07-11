@@ -513,6 +513,10 @@ const WORLD_DEFAULT_CATEGORIES = [
     { id: 'society',   label: '社会规则',  enabled: false, hint: '权力结构、社会阶层、法律与现实世界的差异' },
 ];
 
+// 世界设定独立使用完整输出预算，避免继承通用短任务的 1000 token 默认值。
+const WORLD_RESPONSE_LENGTH = 32000;
+const WORLD_LENGTH_RETRIES = 1;
+
 // 文风提取提示词
 const STYLE_PROMPT = `你是一位资深文学编辑，长期审阅并打磨各类题材的投稿作品，对不同作者的叙事风格有极强的辨别力。你的核心能力是：读懂一位作者「为什么这么写」，并将其风格特征转化为任何人都能照章执行的写作规则。
 
@@ -9057,6 +9061,24 @@ function niWorldToggleEdit(idx) {
     }
 }
 
+async function niWorldCallApi(prompt, onRetry = null) {
+    let lastErr = null;
+    for (let attempt = 0; attempt <= WORLD_LENGTH_RETRIES; attempt++) {
+        try {
+            return await callApiSeq(
+                [{ role: 'user', content: prompt }],
+                { responseLength: WORLD_RESPONSE_LENGTH },
+            );
+        } catch (e) {
+            lastErr = e;
+            const isLengthLimit = String(e?.message || e).includes('AI 返回被长度截断');
+            if (!isLengthLimit || attempt >= WORLD_LENGTH_RETRIES) throw e;
+            onRetry?.(attempt + 1, WORLD_RESPONSE_LENGTH);
+        }
+    }
+    throw lastErr || new Error('世界设定生成失败');
+}
+
 // AI 生成单个大类
 async function niWorldGenOne(idx) {
     const cats = niGetWorldCategories();
@@ -9072,13 +9094,15 @@ async function niWorldGenOne(idx) {
         .replace('{CATEGORY}', cats[idx].label)
         .replace('{NODES}', nodeText);
     try {
-        const result = await callApiSeq([{ role: 'user', content: prompt }]);
+        const result = await niWorldCallApi(prompt, () => {
+            if (regenBtn) regenBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i>输出截断，重试中…';
+        });
         let final = result.trim();
         if (final.length > 100) {
             if (regenBtn) regenBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i>缩写中…';
             const shrinkPrompt = WORLD_SHRINK_PROMPT.replace('{CONTENT}', final);
             try {
-                final = (await callApiSeq([{ role: 'user', content: shrinkPrompt }])).trim();
+                final = (await niWorldCallApi(shrinkPrompt)).trim();
             } catch (_) { /* 缩写失败就用原始结果*/ }
         }
         cats[idx].content = final;
@@ -9109,12 +9133,14 @@ async function niWorldGenAll() {
             .replace('{CATEGORY}', cats[i].label)
             .replace('{NODES}', nodeText);
         try {
-            const result = await callApiSeq([{ role: 'user', content: prompt }]);
+            const result = await niWorldCallApi(prompt, () => {
+                if (btn) btn.innerHTML = `<i class="ti ti-loader"></i>生成中 ${i + 1}/${cats.length}（截断重试）…`;
+            });
             let final = result.trim();
             if (final.length > 100) {
                 const shrinkPrompt = WORLD_SHRINK_PROMPT.replace('{CONTENT}', final);
                 try {
-                    final = (await callApiSeq([{ role: 'user', content: shrinkPrompt }])).trim();
+                    final = (await niWorldCallApi(shrinkPrompt)).trim();
                 } catch (_) { /* 缩写失败就用原始结果*/ }
             }
             cats[i].content = final;
