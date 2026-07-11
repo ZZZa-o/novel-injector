@@ -30,7 +30,6 @@ import {
     niEscAttr,
     niEscHtml,
     niServerFileId,
-    niServerFileName,
     niServerFileNames,
     niSnapshotFileKey,
 } from './lib/storage-utils.js';
@@ -43,6 +42,72 @@ import {
     vecToBuffer,
     vecToBytes,
 } from './lib/vector-utils.js';
+
+import {
+    NI_PLOT_NODE_ORDER_STEP,
+    niComparePlotBaseOrder,
+    niComparePlotOrder,
+    niEnsurePlotNodeId,
+    niFiniteNumber,
+    niHashShort,
+    niMaybeNumber,
+    niMergeStageNodes,
+    niNormalizeIncomingPlots,
+    niOrderedPlotEntries,
+    niPlotBaseOrder,
+    niPlotChunkIdx,
+    niPlotChunkOrder,
+    niPlotManualOrder,
+    niPlotStoryOrder,
+    niSortPlotsByStoryOrder,
+    niPlotTypeRank,
+} from './lib/plot-order-utils.js';
+
+import {
+    canUseDerivedModules,
+    getCleanProgressStats,
+    hasPartialCleanProgress,
+    normalizeCleanArraysToChunks,
+} from './lib/cleaning-state-utils.js';
+
+import {
+    captureCharacterMemory,
+    isSameCharacter,
+    mergeCharacterAliases,
+    mergeCharacters,
+    restoreCharacterMemory,
+} from './lib/character-data-utils.js';
+
+import {
+    niApplyTbLightRecallCut,
+    niBuildTbLightRecallContext,
+    niSelectRecallCandidatesInStoryOrder,
+    niTbLightRecallCandidateAllowed,
+} from './lib/vector-recall-utils.js';
+
+import {
+    capturePlotCheckpointMemory,
+    getAllPlotsInStoryOrder,
+    getAssignedStagesForChunk,
+    normalizePlotCollections,
+    rebuildStageMapFromPlotStageIdx,
+    restorePlotCheckpointMemory,
+} from './lib/plot-checkpoint-utils.js';
+
+import {
+    buildRechunkLayout,
+    splitNovelText,
+} from './lib/chunk-layout-utils.js';
+
+import {
+    isVectorRowCompatible,
+    rebuildStageVectorCompletion,
+} from './lib/vector-state-utils.js';
+
+import { PersistedRateQueue } from './lib/request-rate-queue.js';
+import { parseCleanResponse } from './lib/clean-response-parser.js';
+import { buildStageMapping } from './lib/stage-map-utils.js';
+import { concurrencyLimit, DynamicSemaphore, runWithSemaphore } from './lib/concurrency-utils.js';
 
 import {
     _buildZip,
@@ -666,7 +731,7 @@ const DEFAULT_SETTINGS = {
     chunkKb: 100,
     apiTimeoutMin: 15,  // 每段 API 请求超时时间
     apiRateLimit: 3,    // 每分钟最多请求次数
-    apiConcurrency: 1,  // 1=串行；>1=最大并发请求数；0按串行兼容
+    apiConcurrency: 1,  // 清洗分段最大并发请求数；0按串行兼容
     vecRateLimit: 3,    // 向量化每分钟最多请求次数
     vecConcurrency: 1,  // 1=串行；>1=最大并发请求数；0按串行兼容
     pluginEnabled: true,  // 插件总开关
@@ -694,7 +759,6 @@ const DEFAULT_SETTINGS = {
     worldInjDepth: 4,
     worldInjRole:  0,
     // 文风注入设置
-    styleInjEnabled: false,
     styleInjPos:    2,
     styleInjDepth:  4,
     styleInjRole:   0,
@@ -722,6 +786,8 @@ const S = {
     chunkResults: [],     // string[] — 清洗后的压缩文本
     chunkMeta: [],        // object[] — 每段原始 meta，用于续跑重建
     fileLoaded: false,
+    fileFingerprint: '',  // 文件内容 SHA-256，避免仅凭文件名复用旧数据
+    chunkKbUsed: 0,       // 当前清洗/分段数据对应的 KB 配置
 
     // 清洗
     cleanRunning: false,
@@ -748,6 +814,7 @@ const S = {
     // 向量
     vecDone: false,
     stageVecDone: {},     // {[stageIdx]: boolean} — 各阶段是否已向量化
+    stageVecExpected: {}, // {[stageIdx]: number} — 各阶段完整向量块数
     db: null,
     novelKey: '',         // IndexedDB 隔离 key，基于文件名
     heavyFileKey: '',     // 服务端重数据文件 key，基于用户快照名
@@ -768,6 +835,109 @@ const S = {
 
     // 注入
 };
+
+async function niFingerprintArrayBuffer(buffer) {
+    const bytes = buffer instanceof ArrayBuffer
+        ? buffer
+        : buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function niResetChunkDerivedState() {
+    S.chunkStatus = S.chunks.map(() => 'pending');
+    S.chunkResults = S.chunks.map(() => '');
+    S.chunkMeta = [];
+    S.cleanRunning = false;
+    S.cleanDone = false;
+    S.stopClean = false;
+    S.skipCurrentChunk = false;
+    S.characters = [];
+    S.plots = { main: [], sub: [], pivot: [] };
+    niResetStageVectorState();
+}
+
+function niResetStageVectorState() {
+    S.stageStates = {};
+    S.stageSummaries = {};
+    S.stageTitles = {};
+    S.stageMap = {};
+    S.stageMapN = 0;
+    S.chunkStageMap = null;
+    S.vecDone = false;
+    S.stageVecDone = {};
+    S.stageVecExpected = {};
+}
+
+function niRechunkPreservingCompleted(kb) {
+    const oldChunkStageMap = S.chunkStageMap;
+    const plotMemory = capturePlotCheckpointMemory(S);
+    const characterMemory = captureCharacterMemory(S);
+    const layout = buildRechunkLayout({
+        chunks: S.chunks,
+        status: S.chunkStatus,
+        results: S.chunkResults,
+        meta: S.chunkMeta,
+        kb,
+        charsPerByte: S._charsPerByte || 0.5,
+    });
+    const { chunks, status, results, meta, preserved, pending, oldToNewChunkIdx } = layout;
+
+    S.chunks = chunks;
+    S.chunkStatus = status;
+    S.chunkResults = results;
+    S.chunkMeta = meta;
+    S.cleanRunning = false;
+    S.cleanDone = status.length > 0 && status.every(value => value === 'done');
+    S.stopClean = false;
+    S.skipCurrentChunk = false;
+
+    const remappedPlotMemory = new Map(plotMemory);
+    ['main', 'sub', 'pivot'].forEach(type => {
+        (S.plots[type] || []).forEach((plot, index) => {
+            const oldChunkIdx = niPlotChunkIdx(plot, -1);
+            if (!oldToNewChunkIdx.has(oldChunkIdx)) return;
+            const oldId = niEnsurePlotNodeId(plot, type, index);
+            const saved = plotMemory.get(oldId);
+            if (!saved) return;
+            const newChunkIdx = oldToNewChunkIdx.get(oldChunkIdx);
+            const order = niPlotChunkOrder(plot, index);
+            const newId = `${type}:${newChunkIdx}:${order}:${niHashShort(`${plot.title || ''}\n${plot.body || ''}`)}`;
+            remappedPlotMemory.set(newId, saved);
+        });
+    });
+
+    const remappedChunkStageMap = {};
+    if (oldChunkStageMap) {
+        Object.entries(oldChunkStageMap).forEach(([oldChunkIdx, stages]) => {
+            const oldIdx = Number(oldChunkIdx);
+            if (!oldToNewChunkIdx.has(oldIdx)) return;
+            const values = stages instanceof Set ? [...stages] : (Array.isArray(stages) ? stages : []);
+            remappedChunkStageMap[oldToNewChunkIdx.get(oldIdx)] = new Set(values.map(Number));
+        });
+    }
+    S.chunkStageMap = Object.keys(remappedChunkStageMap).length ? remappedChunkStageMap : null;
+    niRebuildStructuredDataFromChunks(remappedPlotMemory, characterMemory);
+    return {
+        preserved,
+        pending,
+        oldToNewChunkIdx,
+    };
+}
+
+function niResetNovelWorkspace() {
+    S.rawText = '';
+    S.rawFileSize = 0;
+    S.chunks = [];
+    S.fileLoaded = false;
+    S.fileFingerprint = '';
+    S.chunkKbUsed = 0;
+    niResetChunkDerivedState();
+    S.novelKey = '';
+    S.heavyFileKey = '';
+    S.worldCategories = null;
+    S.styleGuide = '';
+}
 
 // ============================================================
 // IndexedDB 封装
@@ -902,19 +1072,13 @@ async function dbCloneNovelKey(fromKey, toKey) {
 // 检查 DB 内现有向量的 fingerprint 是否与当前配置一致
 // 返回 true=匹配或无旧数据，false=不匹配
 async function dbCheckFingerprint() {
-    await dbOpen();
-    return new Promise((resolve) => {
-        const tx = S.db.transaction(DB_STORE, 'readonly');
-        const idx = tx.objectStore(DB_STORE).index('novelKey');
-        const req = idx.openCursor(S.novelKey);
-        req.onsuccess = () => {
-            const cursor = req.result;
-            if (!cursor) { resolve(true); return; }   // 无数据，视为匹配
-            const stored = cursor.value.fingerprint || '';
-            resolve(!stored || stored === getVectorFingerprint());
-        };
-        req.onerror = () => resolve(true);
-    });
+    try {
+        const rows = await dbLoadByNovel();
+        const fingerprint = getVectorFingerprint();
+        return rows.every(row => isVectorRowCompatible(row, fingerprint));
+    } catch (_) {
+        return true;
+    }
 }
 
 // ============================================================
@@ -938,6 +1102,10 @@ function niUpgradeRoleplayPrompt(cfg = extension_settings[EXT_NAME] || {}) {
 function niLoadSettings() {
     extension_settings[EXT_NAME] = extension_settings[EXT_NAME] || {};
     const saved = extension_settings[EXT_NAME];
+    if (Object.prototype.hasOwnProperty.call(saved, 'styleInjEnabled')) {
+        delete saved.styleInjEnabled;
+        saveSettingsDebounced();
+    }
     Object.keys(DEFAULT_SETTINGS).forEach(k => {
         if (saved[k] === undefined) saved[k] = DEFAULT_SETTINGS[k];
     });
@@ -955,11 +1123,20 @@ function niLoadSettings() {
     if (saved._stageTitles) S.stageTitles = saved._stageTitles;
     if (saved._novelKey) S.novelKey = saved._novelKey;
     if (saved._heavyFileKey) S.heavyFileKey = saved._heavyFileKey;
+    if (saved._fileFingerprint) S.fileFingerprint = saved._fileFingerprint;
+    if (saved._chunkKbUsed != null) S.chunkKbUsed = Number(saved._chunkKbUsed) || 0;
     if (saved._vecDone) S.vecDone = saved._vecDone;
     if (saved._stageVecDone) {
         S.stageVecDone = {};
         Object.entries(saved._stageVecDone).forEach(([k, v]) => {
             S.stageVecDone[Number(k)] = v;
+        });
+    }
+    if (saved._stageVecExpected) {
+        S.stageVecExpected = {};
+        Object.entries(saved._stageVecExpected).forEach(([k, v]) => {
+            const count = Math.max(0, parseInt(v, 10) || 0);
+            if (count > 0) S.stageVecExpected[Number(k)] = count;
         });
     }
     if (saved._cleanDone != null) S.cleanDone = saved._cleanDone;
@@ -1013,7 +1190,7 @@ function niLoadSettings() {
         niServerLoadHeavy(S.novelKey, S.heavyFileKey, { chunks: false }).then(ok => {
             if (!ok) return;
             // 重数据已还原，刷新需要它的 UI
-            if (S.cleanDone) {
+            if (canUseDerivedModules(S)) {
                 if (S.chunkStatus.length) {
                     q('#ni-chunk-info') && (q('#ni-chunk-info').style.display = 'block');
                     q('#ni-st-chunks') && (q('#ni-st-chunks').textContent = S.chunkStatus.length);
@@ -1108,10 +1285,13 @@ function niApplyHeavyCore(payload) {
     if (payload._characters)   S.characters   = niStripCharAiRuntime(payload._characters);
     if (payload._plots) {
         S.plots = payload._plots;
-        niNormalizePlotCollections();
+        normalizePlotCollections(S, niSyncSubPlotStageAssignments);
     }
     if (payload._chunkMeta)    S.chunkMeta    = payload._chunkMeta;
-    if (payload._chunkStatus)  S.chunkStatus  = payload._chunkStatus;
+    if (payload._chunkStatus) {
+        S.chunkStatus = payload._chunkStatus;
+        S.cleanDone = S.chunkStatus.length > 0 && S.chunkStatus.every(status => status === 'done');
+    }
     if (payload._styleGuide != null) S.styleGuide = payload._styleGuide;
     niMaybeMigrateLegacyDeviationToChat(payload);
     if (payload.heavyFileKey) S.heavyFileKey = payload.heavyFileKey;
@@ -1504,6 +1684,7 @@ function persistVecState() {
     const cfg = extension_settings[EXT_NAME];
     cfg._vecDone       = S.vecDone;
     cfg._stageVecDone  = S.stageVecDone;
+    cfg._stageVecExpected = S.stageVecExpected;
     saveSettingsDebounced();
 }
 
@@ -1511,17 +1692,19 @@ async function niReconcileVecStateFromDb({ persist = true } = {}) {
     if (!S.novelKey) {
         S.vecDone = false;
         S.stageVecDone = {};
+        S.stageVecExpected = {};
         if (persist) persistVecState();
         return false;
     }
     try {
-        const chunks = await dbLoadByNovel();
-        const rebuilt = {};
-        chunks.forEach(c => {
-            if (c.stageIdx != null) rebuilt[Number(c.stageIdx)] = true;
+        const rebuilt = rebuildStageVectorCompletion({
+            rows: await dbLoadByNovel(),
+            expectedByStage: S.stageVecExpected,
+            oldDone: S.stageVecDone,
+            fingerprint: getVectorFingerprint(),
         });
-        S.stageVecDone = rebuilt;
-        S.vecDone = Object.values(S.stageVecDone).some(Boolean);
+        S.stageVecDone = rebuilt.stageVecDone;
+        S.vecDone = rebuilt.vecDone;
         if (persist) persistVecState();
         return S.vecDone;
     } catch (e) {
@@ -1598,8 +1781,11 @@ function niSaveSettings() {
     cfg._stageTitles   = S.stageTitles;
     cfg._novelKey      = S.novelKey;
     cfg._heavyFileKey  = S.heavyFileKey;
+    cfg._fileFingerprint = S.fileFingerprint;
+    cfg._chunkKbUsed   = S.chunkKbUsed;
     cfg._vecDone       = S.vecDone;
     cfg._stageVecDone  = S.stageVecDone;
+    cfg._stageVecExpected = S.stageVecExpected;
     cfg._cleanDone     = S.cleanDone;
     cfg._stageMap      = S.stageMap;
     cfg._stageMapN     = S.stageMapN;
@@ -1617,7 +1803,6 @@ function niSaveSettings() {
     cfg.worldInjRole  = parseInt(q('#ni-world-inj-role')?.value)   ?? DEFAULT_SETTINGS.worldInjRole;
 
     // 文风设置
-    cfg.styleInjEnabled = q('#ni-style-inj-enabled')?.checked ?? DEFAULT_SETTINGS.styleInjEnabled;
     cfg.styleInjPos   = parseInt(q('#ni-style-inj-pos2')?.value)   ?? DEFAULT_SETTINGS.styleInjPos;
     cfg.styleInjDepth = parseInt(q('#ni-style-inj-depth2')?.value)  ?? DEFAULT_SETTINGS.styleInjDepth;
     cfg.styleInjRole  = parseInt(q('#ni-style-inj-role2')?.value)   ?? DEFAULT_SETTINGS.styleInjRole;
@@ -1679,8 +1864,6 @@ function syncSettingsToUI() {
     sv('#ni-world-inj-depth',cfg.worldInjDepth ?? DEFAULT_SETTINGS.worldInjDepth);
     sv('#ni-world-inj-role', cfg.worldInjRole  ?? DEFAULT_SETTINGS.worldInjRole);
     // 文风设置
-    const styleInjEl = q('#ni-style-inj-enabled');
-    if (styleInjEl) styleInjEl.checked = cfg.styleInjEnabled ?? DEFAULT_SETTINGS.styleInjEnabled;
     sv('#ni-style-inj-pos2',  cfg.styleInjPos   ?? DEFAULT_SETTINGS.styleInjPos);
     sv('#ni-style-inj-depth2',cfg.styleInjDepth ?? DEFAULT_SETTINGS.styleInjDepth);
     sv('#ni-style-inj-role2', cfg.styleInjRole  ?? DEFAULT_SETTINGS.styleInjRole);
@@ -1715,9 +1898,6 @@ function syncSettingsToUI() {
     const globalTailPtEl = q('#ni-global-tail-pt-content');
     if (globalTailPtEl) globalTailPtEl.value = cfg.globalTailPrompt ?? GLOBAL_TAIL_PROMPT;
     niSyncGlobalPromptSourceUI(cfg);
-    // 同步限速队列上限
-    _apiQueue.maxPerMin = cfg.apiRateLimit ?? DEFAULT_SETTINGS.apiRateLimit;
-    _vecQueue.maxPerMin = cfg.vecRateLimit ?? DEFAULT_SETTINGS.vecRateLimit;
     // 修复：初始化时同步渲染小说库，不依赖导航按钮点击
     niRenderNovelLibrary();
     // 同步穿书模式状态文字
@@ -2249,46 +2429,87 @@ function niExtractNovelText(buf, fileName) {
 
 function niApplyFile(f) {
     const reader = new FileReader();
-    reader.onload = ev => {
+    reader.onload = async ev => {
         try {
             const buf = ev.target.result;
+            const fingerprint = await niFingerprintArrayBuffer(buf);
             const extracted = niExtractNovelText(buf, f.name);
-            S.rawText = extracted.text;
-
-            S.rawFileSize = f.size;
-            // novelKey 生成策略：
-            // 如果 cfg 里已有 _novelKey，且文件名与 _novelKey 前缀匹配，
-            // 则复用旧 key，保留向量/清洗状态；否则才生成新 key。
             const cfg = extension_settings[EXT_NAME] || {};
-            const safeName = f.name.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 40);
-            const existingKey = cfg._novelKey || '';
-            const keyMatchesFile = existingKey && existingKey.startsWith(safeName + '_');
-            if (keyMatchesFile) {
-                // 同一本书重新上传：复用旧 novelKey，不重置向量/清洗状态
-                S.novelKey = existingKey;
+            const kb = getCfgKb();
+            const previousFingerprint = S.fileFingerprint || cfg._fileFingerprint || '';
+            const previousKb = Number(S.chunkKbUsed || cfg._chunkKbUsed) || 0;
+            const sameContent = !!previousFingerprint && previousFingerprint === fingerprint;
+            const sameChunkConfig = sameContent && previousKb === kb;
+            const existingKey = S.novelKey || cfg._novelKey || '';
+            const existingHeavyFileKey = S.heavyFileKey || cfg._heavyFileKey || '';
+            const oldChunks = [...(S.chunks || [])];
+            const oldStatus = [...(S.chunkStatus || [])];
+            const oldResults = [...(S.chunkResults || [])];
+            const oldMeta = [...(S.chunkMeta || [])];
+            let appliedKb = kb;
+
+            if (!sameContent) {
+                niResetNovelWorkspace();
+                const safeName = f.name.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 40) || 'novel';
+                S.novelKey = `${safeName}_${fingerprint.slice(0, 12)}_${Date.now().toString(36)}`;
             } else {
-                // 新书：生成唯一 key，重置向量状态
-                S.novelKey = `${safeName}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-                S.vecDone = false;
-                S.stageVecDone = {};
-                S.cleanDone = false;
-                S.stageMap = {};
-                S.stageMapN = 0;
+                S.novelKey = existingKey || `novel_${fingerprint.slice(0, 12)}_${Date.now().toString(36)}`;
+                S.heavyFileKey = existingHeavyFileKey;
             }
+
+            S.rawText = extracted.text;
+            S.rawFileSize = f.size;
+            S.fileFingerprint = fingerprint;
 
             // 动态系数：实际字符数 / 文件字节数，兼容任意编码
             S._charsPerByte = S.rawText.length / Math.max(1, extracted.sourceBytes || f.size);
 
-            const kb = getCfgKb();
-            S.chunks = splitChunks(S.rawText, kb);
-            S.chunkStatus = S.chunks.map(() => 'pending');
-            S.chunkResults = S.chunks.map(() => '');
+            if (sameChunkConfig) {
+                S.chunks = splitNovelText(S.rawText, kb, S._charsPerByte || 0.5);
+                S.chunkStatus = S.chunks.map((_, i) => S.chunkStatus[i] || 'pending');
+                S.chunkResults = S.chunks.map((_, i) => S.chunkResults[i] || '');
+                S.chunkMeta = S.chunks.map((_, i) => S.chunkMeta[i] || null);
+            } else if (sameContent) {
+                S.chunks = oldChunks.length ? oldChunks : splitNovelText(S.rawText, previousKb || kb, S._charsPerByte || 0.5);
+                S.chunkStatus = S.chunks.map((_, i) => oldStatus[i] || 'pending');
+                S.chunkResults = S.chunks.map((_, i) => oldResults[i] || '');
+                S.chunkMeta = S.chunks.map((_, i) => oldMeta[i] || null);
+
+                let missingCompletedData = S.chunkStatus.some((status, i) => status === 'done'
+                    && (!String(S.chunkResults[i] || '').trim() || !S.chunkMeta[i]));
+                if (missingCompletedData) {
+                    try {
+                        await niServerLoadHeavy(S.novelKey, S.heavyFileKey, { core: true, chunks: true });
+                    } catch (e) {
+                        console.warn('[NI] 重新分段前恢复完成分段失败:', e);
+                    }
+                    missingCompletedData = S.chunkStatus.some((status, i) => status === 'done'
+                        && (!String(S.chunkResults[i] || '').trim() || !S.chunkMeta[i]));
+                }
+                if (missingCompletedData) {
+                    appliedKb = previousKb || kb;
+                    sv('#ni-chunk-kb', appliedKb);
+                    alert('无法完整恢复已完成分段，已保留原分段大小，避免丢失清洗进度。');
+                } else {
+                    const rechunked = niRechunkPreservingCompleted(kb);
+                    await dbRemapSourceChunkIndices(rechunked.oldToNewChunkIdx).catch(e => {
+                        console.warn('[NI] 重新分段后更新向量正文顺序失败:', e);
+                    });
+                    if (rechunked.preserved > 0) {
+                        toastr?.success(`已保留 ${rechunked.preserved} 个完成分段，其余正文按 ${kb} KB 重新分段`);
+                    }
+                }
+            } else {
+                S.chunks = splitNovelText(S.rawText, kb, S._charsPerByte || 0.5);
+                niResetChunkDerivedState();
+            }
+            S.chunkKbUsed = appliedKb;
             S.fileLoaded = true;
 
             // UI
             q('#ni-uz')?.classList.add('loaded');
             q('#ni-u-label').textContent = f.name;
-            q('#ni-u-hint').textContent = `${Math.round(f.size / 1024)} KB · 共 ${S.chunks.length} 段（${kb} KB/段）`;
+            q('#ni-u-hint').textContent = `${Math.round(f.size / 1024)} KB · 共 ${S.chunks.length} 段（${appliedKb} KB/段）`;
             const ok = q('#ni-u-ok');
             if (ok) ok.style.display = 'flex';
             q('#ni-u-fname').textContent = `${f.name} 已上传`;
@@ -2300,13 +2521,7 @@ function niApplyFile(f) {
             renderChunkList();
             niStylePopulateChunkSel();
             niSyncCleanButtonState();
-            // 只持久化文件相关状态，不触碰向量状态
-            cfg._novelKey   = S.novelKey;
-            cfg._cleanDone  = S.cleanDone;
-            cfg._chunkStageMap = S.chunkStageMap
-                ? Object.fromEntries(Object.entries(S.chunkStageMap).map(([k,v]) => [k, [...v]]))
-                : undefined;
-            saveSettingsDebounced();
+            niSaveSettings();
         } catch (e) {
             console.error('[NI] 文件解析失败:', e);
             alert(`文件解析失败：${e.message || e}`);
@@ -2320,53 +2535,45 @@ function getCfgKb() {
     return Math.max(10, parseInt(q('#ni-chunk-kb')?.value) || 100);
 }
 
-function splitChunks(text, kb) {
-    // 用动态系数：实际字符数/文件字节数，兼容 GBK/UTF-8/混合编码
-    // S._charsPerByte 在 niApplyFile 里计算；未设置时降级用 0.5
-    const charsPerByte = S._charsPerByte || 0.5;
-    const targetChars = Math.round(kb * 1024 * charsPerByte);
-    const res = [];
-    let start = 0;
-
-    while (start < text.length) {
-        let end = start + targetChars;
-        if (end >= text.length) {
-            res.push(text.slice(start));
-            break;
-        }
-        // 从 end 往后找最近的换行符
-        const lookAhead = text.indexOf('\n', end);
-        if (lookAhead !== -1 && lookAhead - end < 500) {
-            end = lookAhead + 1;
-        }
-        res.push(text.slice(start, end));
-        start = end;
-    }
-    return res;
-}
-
 function niOnKbChange() {
     if (!S.fileLoaded) return;
     clearTimeout(S.kbTimer);
-    S.kbTimer = setTimeout(() => {
+    S.kbTimer = setTimeout(async () => {
         const kb = getCfgKb();
-        S.chunks = splitChunks(S.rawText, kb);
-        S.chunkStatus = S.chunks.map((_, i) => S.chunkStatus[i] || 'pending');
-        S.chunkResults = S.chunks.map((_, i) => S.chunkResults[i] || '');
+        if (kb === S.chunkKbUsed) return;
+        if (S.cleanRunning) {
+            sv('#ni-chunk-kb', S.chunkKbUsed || DEFAULT_SETTINGS.chunkKb);
+            alert('清洗运行中不能调整分段大小，请先暂停。');
+            return;
+        }
+        const hasCompleted = S.chunkStatus.some(status => status === 'done');
+        const missingCompletedText = S.chunkStatus.some((status, i) => status === 'done' && !String(S.chunkResults[i] || '').trim());
+        if (hasCompleted && missingCompletedText) {
+            const loaded = await niEnsureChunksLoaded();
+            const stillMissing = S.chunkStatus.some((status, i) => status === 'done' && !String(S.chunkResults[i] || '').trim());
+            if (!loaded || stillMissing) {
+                sv('#ni-chunk-kb', S.chunkKbUsed || DEFAULT_SETTINGS.chunkKb);
+                alert('无法加载已完成分段的压缩结果，已取消重新分段，避免丢失进度。');
+                return;
+            }
+        }
+        const rechunked = niRechunkPreservingCompleted(kb);
+        await dbRemapSourceChunkIndices(rechunked.oldToNewChunkIdx).catch(e => {
+            console.warn('[NI] 重新分段后更新向量正文顺序失败:', e);
+        });
+        S.chunkKbUsed = kb;
         q('#ni-u-hint').textContent = `${Math.round(S.rawFileSize / 1024)} KB · 共 ${S.chunks.length} 段（${kb} KB/段）`;
         q('#ni-st-chunks').textContent = S.chunks.length;
         renderChunkList();
         niStylePopulateChunkSel();
         niSyncCleanButtonState();
         niSaveSettings();
+        if (rechunked.preserved > 0) {
+            toastr?.success(`已保留 ${rechunked.preserved} 个完成分段，其余正文按 ${kb} KB 重新分段`);
+        }
     }, 400);
 }
 window.niOnKbChange = niOnKbChange;
-
-function niOnStageNChange() {
-    buildStages();
-    niSaveSettings();
-}
 
 function renderChunkList() {
     const list = q('#ni-chunk-list');
@@ -2406,52 +2613,13 @@ function setChunkStat(i, st) {
 // ============================================================
 // 并发信号量 — 限制同时进行的 API 请求数，防止触发并发限制
 // ============================================================
-function niConcurrencyLimit(value, fallback = 0) {
-    const raw = parseInt(value ?? fallback, 10);
-    return Number.isFinite(raw) && raw > 0 ? raw : 1;
-}
-
-function niCreateSemaphore(getLimit) {
-    let running = 0;
-    const queue = [];
-    function tryNext() {
-        if (!queue.length) return;
-        if (running >= getLimit()) return;
-        const { resolve } = queue.shift();
-        running++;
-        resolve();
-    }
-    return {
-        async acquire() {
-            if (running < getLimit()) { running++; return; }
-            await new Promise(resolve => queue.push({ resolve }));
-        },
-        release() {
-            running--;
-            tryNext();
-        },
-    };
-}
-
-const ApiSemaphore = niCreateSemaphore(() =>
-    niConcurrencyLimit(extension_settings[EXT_NAME]?.apiConcurrency, DEFAULT_SETTINGS.apiConcurrency)
+const ApiSemaphore = new DynamicSemaphore(() =>
+    concurrencyLimit(extension_settings[EXT_NAME]?.apiConcurrency, DEFAULT_SETTINGS.apiConcurrency)
 );
 
-const VecSemaphore = niCreateSemaphore(() =>
-    niConcurrencyLimit(extension_settings[EXT_NAME]?.vecConcurrency, DEFAULT_SETTINGS.vecConcurrency)
+const VecSemaphore = new DynamicSemaphore(() =>
+    concurrencyLimit(extension_settings[EXT_NAME]?.vecConcurrency, DEFAULT_SETTINGS.vecConcurrency)
 );
-
-async function withSemaphore(fn) {
-    await ApiSemaphore.acquire();
-    try { return await fn(); }
-    finally { ApiSemaphore.release(); }
-}
-
-async function withVecSemaphore(fn) {
-    await VecSemaphore.acquire();
-    try { return await fn(); }
-    finally { VecSemaphore.release(); }
-}
 
 function niNormalizeGlobalPromptSource(value) {
     if (value === 'none') return 'none';
@@ -3324,14 +3492,25 @@ function niInsertGlobalPromptMessage(messages, content, { pos, depth, role, pref
     return next;
 }
 
+function niInsertIntoEventChat(chat, content, pos, depth, role) {
+    const next = niInsertGlobalPromptMessage(chat, content, {
+        pos,
+        depth,
+        role,
+        preferPrependSystem: false,
+    });
+    chat.splice(0, chat.length, ...next);
+}
+
 // ============================================================
 // API 调用 — 清洗
 // ============================================================
-async function callCleanApi(messages) {
+async function callCleanApi(messages, { signal = null } = {}) {
+    await niAcquireApiRateSlot(signal);
     const cfg = extension_settings[EXT_NAME];
     const useStream = cfg.cleanStream ?? true;
     if (niUseTavernGlobalPreset(cfg)) {
-        return withSemaphore(() => niGenerateWithTavernMainPreset(messages, { responseLength: 32000 }));
+        return runWithSemaphore(ApiSemaphore, () => niGenerateWithTavernMainPreset(messages, { responseLength: 32000, signal }));
     }
     messages = niApplyGlobalPromptsToMessages(messages, cfg);
 
@@ -3346,7 +3525,7 @@ async function callCleanApi(messages) {
         proxy_password: cfg.cleanKey,
     };
 
-    return withSemaphore(async () => {
+    return runWithSemaphore(ApiSemaphore, async () => {
         // 超时控制：默认 5 分钟；同一个 controller 贯穿 fetch + 流式读取全程
         const TIMEOUT_MS = (extension_settings[EXT_NAME]?.apiTimeoutMin ?? 15) * 60 * 1000;
         const controller = new AbortController();
@@ -3412,15 +3591,108 @@ async function callCleanApi(messages) {
 // ============================================================
 // 清洗主流程
 // ============================================================
+function niCleanConcurrencyLimit() {
+    return concurrencyLimit(extension_settings[EXT_NAME]?.apiConcurrency, DEFAULT_SETTINGS.apiConcurrency);
+}
+
+function niBuildCleanMessages(i) {
+    let previousContext = '';
+    let previousLabel = '';
+    if (i > 0) {
+        if (S.chunkStatus[i - 1] === 'done' && S.chunkResults[i - 1]) {
+            previousContext = S.chunkResults[i - 1].slice(-800);
+            previousLabel = '前段概括';
+        } else if (S.chunks[i - 1]) {
+            previousContext = S.chunks[i - 1].slice(-800);
+            previousLabel = '前段原文末尾';
+        }
+    }
+    return [
+        { role: 'system', content: extension_settings[EXT_NAME]?.customPrompt || CLEAN_PROMPT },
+        {
+            role: 'user',
+            content: previousContext
+                ? `【${previousLabel}（仅供衔接参考，不要重复压缩）】\n${previousContext}\n\n【本段原文（请压缩并输出 ni_meta）】\n${S.chunks[i]}`
+                : `【本段原文（请压缩并输出 ni_meta）】\n${S.chunks[i]}`,
+        },
+    ];
+}
+
+function niRebuildStructuredDataFromChunks(plotOrderMemory = null, characterMemory = null) {
+    S.characters = [];
+    S.plots = { main: [], sub: [], pivot: [] };
+    for (let i = 0; i < S.chunkStatus.length; i++) {
+        const meta = S.chunkStatus[i] === 'done' ? S.chunkMeta[i] : null;
+        if (!meta) continue;
+        mergeCharacters(S, meta.characters || [], i);
+        mergeCharacterAliases(S, meta.character_aliases || meta.aliases || [], i);
+        mergePlots(meta.plots || [], i);
+    }
+    if (plotOrderMemory) restorePlotCheckpointMemory(S, plotOrderMemory);
+    if (characterMemory) restoreCharacterMemory(S, characterMemory);
+    ['main', 'sub', 'pivot'].forEach(type => niSortPlotsByStoryOrder(S.plots[type]));
+    rebuildStageMapFromPlotStageIdx(S);
+    niSyncSubPlotStageAssignments();
+}
+
+async function niProcessCleanChunk(i, titleNote) {
+    if (S.stopClean || S.chunkStatus[i] === 'done') return { paused: S.stopClean };
+    setChunkStat(i, 'running');
+    const messages = niBuildCleanMessages(i);
+    const maxRetry = 3;
+
+    for (let attempt = 1; attempt <= maxRetry; attempt++) {
+        if (S.stopClean) {
+            setChunkStat(i, 'pending');
+            return { paused: true };
+        }
+        if (attempt > 1) {
+            if (titleNote) titleNote.textContent = `第 ${i + 1} 段重试 ${attempt - 1}…`;
+            await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
+        }
+
+        const controller = new AbortController();
+        S._cleanAbortControllers.set(i, controller);
+        try {
+            const raw = await callCleanApi(messages, { signal: controller.signal });
+            const { compressed, meta } = parseCleanResponse(raw, i);
+            if (!meta) throw new Error('响应缺少 ni_meta 块（已重试）');
+            S.chunkResults[i] = compressed;
+            S.chunkMeta[i] = meta;
+            setChunkStat(i, 'done');
+            return { done: true };
+        } catch (err) {
+            if (S.stopClean) {
+                setChunkStat(i, 'pending');
+                return { paused: true };
+            }
+            if (S._cleanSkippedChunks.has(i)) {
+                S._cleanSkippedChunks.delete(i);
+                setChunkStat(i, 'error');
+                return { skipped: true, error: true };
+            }
+            console.warn(`[NI] 第 ${i + 1} 段第 ${attempt} 次失败:`, err);
+            if (attempt === maxRetry) {
+                console.error(`[NI] 第 ${i + 1} 段已重试 ${maxRetry} 次，标记失败`);
+                setChunkStat(i, 'error');
+                return { error: true };
+            }
+        } finally {
+            if (S._cleanAbortControllers.get(i) === controller) S._cleanAbortControllers.delete(i);
+        }
+    }
+    return { error: true };
+}
+
 async function niStartClean(options = {}) {
     if (!S.fileLoaded || S.cleanRunning) return;
     const restart = options.restart === true;
 
     if (restart) {
-        niResetCleanRuntimeForRestart();
+        await niResetCleanRuntimeForRestart();
     } else {
-        niNormalizeCleanArraysToChunks();
-        const beforeStats = niCleanProgressStats();
+        normalizeCleanArraysToChunks(S);
+        const beforeStats = getCleanProgressStats(S);
         if (beforeStats.done > 0 && !niHasLoadedChunks()) {
             const ok = await niEnsureChunksLoaded();
             if (!ok || !niHasLoadedChunks()) {
@@ -3428,13 +3700,15 @@ async function niStartClean(options = {}) {
                 niSyncCleanButtonState();
                 return;
             }
-            niNormalizeCleanArraysToChunks();
+            normalizeCleanArraysToChunks(S);
         }
     }
 
     S.cleanRunning = true;
     S.stopClean = false;
     S.skipCurrentChunk = false;
+    S._cleanAbortControllers = new Map();
+    S._cleanSkippedChunks = new Set();
 
     const btn = q('#ni-btn-clean');
     // 清洗中：隐藏主按钮，显示跳过/暂停
@@ -3453,108 +3727,33 @@ async function niStartClean(options = {}) {
     if (titleProg) titleProg.style.display = 'flex';
     if (cpCard) cpCard.classList.add('ni-has-prog');
 
-    // 重置：仅在全新清洗时清空；续跑时保留已有数据
+    // 并发请求只写各自分段结果，结束后按 chunkIndex 统一重建结构化数据。
     const isResume = !restart && S.chunkStatus.some(s => s === 'done');
-    const plotOrderMemory = isResume ? niCapturePlotOrderMemory() : null;
+    const plotOrderMemory = isResume ? capturePlotCheckpointMemory(S) : null;
+    const characterMemory = isResume ? captureCharacterMemory(S) : null;
     if (!isResume) {
-        S.characters = [];
-        S.plots = { main: [], sub: [], pivot: [] };
         S.chunkMeta = [];
-    } else {
-        // 续跑：从已保存的 chunkMeta 重建 characters/plots，防止数据不完整
-        S.characters = [];
-        S.plots = { main: [], sub: [], pivot: [] };
-        for (let k = 0; k < S.chunkStatus.length; k++) {
-            if (S.chunkStatus[k] === 'done' && S.chunkMeta[k]) {
-                mergeCharacters(S.chunkMeta[k].characters || [], k);
-                mergeCharacterAliases(S.chunkMeta[k].character_aliases || S.chunkMeta[k].aliases || [], k);
-                mergePlots(S.chunkMeta[k].plots || [], k);
-            }
-        }
-        niRestorePlotOrderMemory(plotOrderMemory);
     }
-    // 续跑时从 chunkMeta 重建已完成段的节点数据
+    const pendingIndices = S.chunks.map((_, i) => i).filter(i => S.chunkStatus[i] !== 'done');
+    const workerCount = Math.min(niCleanConcurrencyLimit(), Math.max(1, pendingIndices.length));
+    let next = 0;
+    let completed = S.chunkStatus.filter(status => status === 'done').length;
+    if (titleNote) titleNote.textContent = `并发 ${workerCount} · 已完成 ${completed}/${S.chunks.length} 段`;
 
-    let hasError = false;
-
-    for (let i = 0; i < S.chunks.length; i++) {
-        // 暂停检测
-        if (S.stopClean) {
-            if (titleNote) titleNote.textContent = `已暂停（第 ${i + 1} 段起可续跑）`;
-            break;
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+        while (!S.stopClean) {
+            const queueIndex = next++;
+            if (queueIndex >= pendingIndices.length) break;
+            const chunkIdx = pendingIndices[queueIndex];
+            await niProcessCleanChunk(chunkIdx, titleNote);
+            completed++;
+            if (titleNote && !S.stopClean) titleNote.textContent = `并发 ${workerCount} · 已处理 ${completed}/${S.chunks.length} 段`;
+            if (titleBar) titleBar.style.width = `${Math.round((completed / S.chunks.length) * 92)}%`;
         }
+    }));
 
-        if (S.chunkStatus[i] === 'done') {
-            if (titleBar) titleBar.style.width = `${Math.round(((i + 1) / S.chunks.length) * 92)}%`;
-            continue;
-        }
-
-        // 每段处理前，取紧邻的上一段已完成结果作为上下文
-        let prevSummary = '';
-        for (let k = i - 1; k >= 0; k--) {
-            if (S.chunkStatus[k] === 'done' && S.chunkResults[k]) {
-                prevSummary = S.chunkResults[k].slice(0, 800);
-                break;
-            }
-        }
-
-        S.skipCurrentChunk = false;
-        setChunkStat(i, 'running');
-        if (titleNote) titleNote.textContent = `正在处理第 ${i + 1}/${S.chunks.length} 段…`;
-        if (titleBar) titleBar.style.width = `${Math.round((i / S.chunks.length) * 92)}%`;
-
-        const messages = [
-            { role: 'system', content: extension_settings[EXT_NAME]?.customPrompt || CLEAN_PROMPT },
-            {
-                role: 'user',
-                content: prevSummary
-                    ? `【前段概括（仅供上下文参考，不要重复压缩）】\n${prevSummary}\n\n【本段原文（请压缩并输出 ni_meta）】\n${S.chunks[i]}`
-                    : `【本段原文（请压缩并输出 ni_meta）】\n${S.chunks[i]}`,
-            },
-        ];
-
-        // 方案A：每段最多自动重试 3 次
-        const MAX_RETRY = 3;
-        let success = false;
-        for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
-            try {
-                if (attempt > 1) {
-                    if (titleNote) titleNote.textContent = `正在处理第 ${i + 1}/${S.chunks.length} 段… 重试${attempt-1}`;
-                    await new Promise(r => setTimeout(r, 1500 * attempt)); // 递增等待
-                }
-                const raw = await callCleanApi(messages);
-                const { compressed, meta } = parseCleanResponse(raw, i);
-                if (!meta) {
-                    // ni_meta 缺失且抢救失败，视为本次无效，抛出以触发重试
-                    throw new Error('响应缺少 ni_meta 块（已重试）');
-                }
-                S.chunkResults[i] = compressed;
-                S.chunkMeta[i] = meta;  // 保存原始 meta，供续跑重建用
-                mergeCharacters(meta.characters || [], i);
-                mergeCharacterAliases(meta.character_aliases || meta.aliases || [], i);
-                mergePlots(meta.plots || [], i);
-                setChunkStat(i, 'done');
-                success = true;
-                break;
-            } catch (err) {
-                // 用户触发了跳过或暂停，直接跳出重试
-                if (S.skipCurrentChunk || S.stopClean) {
-                    setChunkStat(i, 'error');
-                    hasError = true;
-                    if (titleNote) titleNote.textContent = S.stopClean ? `已暂停于第 ${i + 1} 段` : `第 ${i + 1} 段已跳过`;
-                    success = true;
-                    break;
-                }
-                console.warn(`[NI] 第 ${i + 1} 段第 ${attempt} 次失败:`, err);
-                if (attempt === MAX_RETRY) {
-                    console.error(`[NI] 第 ${i + 1} 段已重试 ${MAX_RETRY} 次，标记失败`);
-                    setChunkStat(i, 'error');
-                    hasError = true;
-                    if (titleNote) titleNote.textContent = `第 ${i + 1} 段失败`;
-                }
-            }
-        }
-    }
+    niRebuildStructuredDataFromChunks(plotOrderMemory, characterMemory);
+    const hasError = S.chunkStatus.some(status => status === 'error');
 
     // 清洗结束：恢复主按钮，隐藏跳过/暂停
     if (btn) btn.style.display = '';
@@ -3563,29 +3762,35 @@ async function niStartClean(options = {}) {
 
     const doneCount = S.chunkStatus.filter(s => s === 'done').length;
     const errCount  = S.chunkStatus.filter(s => s === 'error').length;
-    if (titleBar) { titleBar.style.width = '100%'; titleBar.classList.add('g'); }
-    if (titleNote) {
+    if (S.stopClean) {
+        if (titleBar) titleBar.classList.remove('g');
+        if (titleNote) {
+            titleNote.textContent = `已暂停 · ${doneCount}/${S.chunks.length} 段完成`;
+            titleNote.classList.remove('g');
+        }
+    } else {
+        if (titleBar) { titleBar.style.width = '100%'; titleBar.classList.add('g'); }
+    }
+    if (titleNote && !S.stopClean) {
         titleNote.textContent = hasError
             ? `${doneCount} 段完成，${errCount} 段失败`
             : `全部 ${S.chunks.length} 段完成`;
         titleNote.classList.toggle('g', !hasError);
     }
 
-    S.cleanDone = doneCount > 0;
+    S.cleanDone = S.chunkStatus.length > 0 && doneCount === S.chunkStatus.length;
     S.cleanRunning = false;
+    S._cleanAbortControllers?.clear();
+    S._cleanSkippedChunks?.clear();
     niSyncCleanButtonState();
 
-    if (S.cleanDone) {
-        // 重试后按 chunkIndex 重新排序，防止乱序
-        ['main', 'sub', 'pivot'].forEach(type => {
-            niSortPlotsByStoryOrder(S.plots[type]);
-        });
-        renderPlots();
-        renderCharacters();
-        buildStages();
-        setBtn('#ni-btn-vec', false);
-        // 不再自动调用 AI 生成概括，用户可在角色/阶段页手动点击"AI 生成概括"
-    }
+    // 每轮清洗停止后都形成可用检查点；旧节点/阶段保持，新完成分段追加到时间线。
+    ['main', 'sub', 'pivot'].forEach(type => niSortPlotsByStoryOrder(S.plots[type]));
+    renderPlots();
+    renderCharacters();
+    buildStages();
+    setBtn('#ni-btn-vec', false);
+    // 不再自动调用 AI 生成概括，用户可在角色/阶段页手动点击"AI 生成概括"
 
     niSaveSettings();
 }
@@ -3606,11 +3811,17 @@ window.niRetryFailed = niRetryFailed;
 // 跳过当前正在处理的段
 function niSkipChunk() {
     if (!S.cleanRunning) return;
-    S.skipCurrentChunk = true;
-    // 直接 abort 正在进行的 fetch/stream，立即生效
-    S._currentAbortController?.abort();
+    const active = [...(S._cleanAbortControllers?.keys?.() || [])].sort((a, b) => a - b);
+    const chunkIdx = active[0];
+    if (chunkIdx != null) {
+        S._cleanSkippedChunks?.add(chunkIdx);
+        S._cleanAbortControllers.get(chunkIdx)?.abort();
+    } else {
+        S.skipCurrentChunk = true;
+        S._currentAbortController?.abort();
+    }
     const titleNote = q('#ni-cp-title-note');
-    if (titleNote) titleNote.textContent = '正在跳过当前段…';
+    if (titleNote) titleNote.textContent = chunkIdx != null ? `正在跳过第 ${chunkIdx + 1} 段…` : '正在跳过当前段…';
 }
 window.niSkipChunk = niSkipChunk;
 
@@ -3651,7 +3862,7 @@ async function niRunSingleChunk(i) {
         S.chunkResults[i] = compressed;
         S.chunkMeta[i] = meta;  // 同步更新 chunkMeta
 
-        const plotOrderMemory = niCapturePlotOrderMemory();
+        const plotOrderMemory = capturePlotCheckpointMemory(S);
 
         // 从 plots/characters 中移除该段旧数据，再 merge 新数据
         ['main', 'sub', 'pivot'].forEach(type => {
@@ -3662,10 +3873,10 @@ async function niRunSingleChunk(i) {
             if (Array.isArray(c.aliases)) c.aliases = c.aliases.filter(a => a._chunkIdx !== i);
         });
 
-        mergeCharacters(meta.characters || [], i);
-        mergeCharacterAliases(meta.character_aliases || meta.aliases || [], i);
+        mergeCharacters(S, meta.characters || [], i);
+        mergeCharacterAliases(S, meta.character_aliases || meta.aliases || [], i);
         mergePlots(meta.plots || [], i);
-        niRestorePlotOrderMemory(plotOrderMemory);
+        restorePlotCheckpointMemory(S, plotOrderMemory);
 
         // merge 后按 _chunkIdx 重新排序，确保节点插入正确位置
         ['main', 'sub', 'pivot'].forEach(type => {
@@ -3673,7 +3884,7 @@ async function niRunSingleChunk(i) {
         });
 
         setChunkStat(i, 'done');
-        S.cleanDone = true;
+        S.cleanDone = S.chunkStatus.length > 0 && S.chunkStatus.every(status => status === 'done');
         renderPlots();
         renderCharacters();
         buildStages();
@@ -3691,7 +3902,7 @@ window.niRunSingleChunk = niRunSingleChunk;
 function niPauseClean() {
     if (!S.cleanRunning) return;
     S.stopClean = true;
-    // 同时 abort 当前请求，让暂停立即生效而不必等 API 返回
+    S._cleanAbortControllers?.forEach(controller => controller.abort());
     S._currentAbortController?.abort();
     const btn = q('#ni-btn-pause');
     if (btn) btn.disabled = true;
@@ -3701,297 +3912,15 @@ function niPauseClean() {
 window.niPauseClean = niPauseClean;
 
 // ============================================================
-// 解析清洗响应
-// ============================================================
-function parseCleanResponse(raw, chunkIndex) {
-    let meta = null;
-    let compressed = raw;
-
-    const metaMatch = raw.match(/<ni_meta>([\s\S]*?)<\/ni_meta>/);
-    if (metaMatch) {
-        compressed = raw.replace(/<ni_meta>[\s\S]*?<\/ni_meta>/, '').trim();
-        try {
-            // 容错：移除可能的 markdown 代码块标记
-            let jsonStr = metaMatch[1].trim().replace(/^```json\s*/,'').replace(/^```\s*/,'').replace(/\s*```$/,'');
-            meta = JSON.parse(jsonStr);
-        } catch (e) {
-            console.warn('[NI] ni_meta JSON 解析失败（格式错误，已跳过元数据）:', e);
-            // 即使 meta 解析失败，compressed 文本仍保留，不影响向量化
-        }
-    } else {
-        // AI 没有输出 ni_meta 块时，尝试从正文中抢救裸 JSON
-        const fallbackMatch = raw.match(/\{[\s\S]*"plots"[\s\S]*\}/);
-        if (fallbackMatch) {
-            try {
-                let jsonStr = fallbackMatch[0].trim().replace(/^```json\s*/,'').replace(/^```\s*/,'').replace(/\s*```$/,'');
-                meta = JSON.parse(jsonStr);
-                compressed = raw.replace(fallbackMatch[0], '').trim() || raw.trim();
-                console.warn('[NI] 未找到 ni_meta 标签，但从正文抢救到裸 JSON，已使用。');
-            } catch (e) {
-                console.warn('[NI] 裸 JSON 抢救失败:', e);
-            }
-        }
-        if (!meta) {
-            // 兜底失败：全文作为压缩稿，调用侧会据此触发重试
-            console.warn('[NI] 未找到 ni_meta 块且抢救失败，全文作为压缩稿，将触发重试。');
-            compressed = raw.trim();
-        }
-    }
-
-    return { compressed, meta };
-}
-
-// ============================================================
 // 合并角色数据
 // ============================================================
-
-// 判断两个角色名是否可能是同一人：
-// ① 完全相同 ② 一个包含另一个 ③ identity 互相包含对方的 name
-function _isSameChar(a, b) {
-    const na = (a.name || '').trim();
-    const nb = (b.name || '').trim();
-    if (!na || !nb) return false;
-    if (na === nb) return true;
-    // 名字包含关系
-    if (na.length >= 2 && nb.includes(na)) return true;
-    if (nb.length >= 2 && na.includes(nb)) return true;
-    return false;
-}
-
-function niNormalizeCharAlias(raw, chunkIndex, fallbackCharName = '') {
-    const src = typeof raw === 'string' ? { text: raw } : (raw || {});
-    const text = String(src.text || src.name || src.alias || src.title || '').trim();
-    if (!text) return null;
-    return {
-        character_name: String(src.character_name || src.characterName || src.char || fallbackCharName || '').trim(),
-        text,
-        kind: String(src.kind || src.type || 'alias').trim() || 'alias',
-        note: String(src.note || src.desc || '').trim(),
-        _chunkIdx: chunkIndex ?? null,
-    };
-}
-
-function niMergeAliasesIntoChar(charObj, aliases, chunkIndex) {
-    if (!charObj || !Array.isArray(aliases)) return;
-    if (!Array.isArray(charObj.aliases)) charObj.aliases = [];
-    aliases.forEach(raw => {
-        const alias = niNormalizeCharAlias(raw, chunkIndex, charObj.name);
-        if (!alias || alias.text === charObj.name) return;
-        const existing = charObj.aliases.find(a => (a.text || '') === alias.text);
-        if (!existing) {
-            charObj.aliases.push(alias);
-        } else if ((existing._chunkIdx == null) || (alias._chunkIdx != null && alias._chunkIdx < existing._chunkIdx)) {
-            existing._chunkIdx = alias._chunkIdx;
-        }
-    });
-}
-
-function mergeCharacters(incoming, chunkIndex) {
-    for (const c of incoming) {
-        if (!c.name) continue;
-        const existing = S.characters.find(x => _isSameChar(x, c));
-        if (!existing) {
-            const isProtag = (c.role || '其他') === '主角';
-            S.characters.push({
-                name: c.name,
-                role: c.role || '其他',
-                identity: c.identity || c.bio || '',
-                appearance: c.appearance || '',
-                gender: c.gender || '',
-                personality: c.personality || '',
-                relations: c.relations || '',
-                aliases: [],
-                _firstChunkIdx: chunkIndex ?? null,
-                enabled: isProtag,  // 主角默认开启，其他角色默认关闭，等待阶段开启联动
-            });
-            niMergeAliasesIntoChar(S.characters[S.characters.length - 1], c.aliases || c.character_aliases || [], chunkIndex);
-        } else {
-            niMergeAliasesIntoChar(existing, c.aliases || c.character_aliases || [], chunkIndex);
-            // 同名角色已存在：不覆盖人设字段
-            // 人设以首次登场的记录为准，后续段的信息可能已深受剧情演变影响
-        }
-    }
-}
-
-function mergeCharacterAliases(incoming, chunkIndex) {
-    if (!Array.isArray(incoming) || !incoming.length) return;
-    incoming.forEach(raw => {
-        const alias = niNormalizeCharAlias(raw, chunkIndex);
-        if (!alias) return;
-        const owner = S.characters.find(c =>
-            _isSameChar(c, { name: alias.character_name }) ||
-            _isSameChar(c, { name: alias.text }) ||
-            (Array.isArray(c.aliases) && c.aliases.some(a => (a.text || '') === alias.character_name))
-        );
-        if (!owner) return;
-        niMergeAliasesIntoChar(owner, [alias], chunkIndex);
-    });
-}
 
 // ============================================================
 // 合并剧情数据，计算所属阶段
 // ============================================================
-const NI_PLOT_TYPE_RANK = { main: 0, sub: 1, pivot: 2 };
-const NI_PLOT_CHUNK_ORDER_STEP = 1000000;
-const NI_PLOT_NODE_ORDER_STEP = 1000;
-
-function niFiniteNumber(value, fallback = 0) {
-    if (value === undefined || value === null || value === '') return fallback;
-    const n = Number(value);
-    return Number.isFinite(n) ? n : fallback;
-}
-
-function niMaybeNumber(value) {
-    if (value === undefined || value === null || value === '') return null;
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-}
-
-function niPlotChunkIdx(plot, fallback = 0) {
-    return niFiniteNumber(plot?._chunkIdx ?? plot?.chunk_index ?? plot?.chunkIndex, fallback);
-}
-
-function niPlotChunkOrder(plot, fallback = 0) {
-    return niFiniteNumber(
-        plot?._chunkOrder ??
-        plot?.chunk_order ??
-        plot?.chunkOrder ??
-        plot?.order ??
-        plot?.order_index ??
-        plot?.node_order,
-        fallback
-    );
-}
-
-function niPlotTypeRank(plot) {
-    const type = plot?._type || plot?.type || '';
-    return NI_PLOT_TYPE_RANK[type] ?? 99;
-}
-
-function niPlotBaseOrder(plot, fallback = 0) {
-    return niPlotChunkIdx(plot) * NI_PLOT_CHUNK_ORDER_STEP +
-        niPlotChunkOrder(plot, fallback) * NI_PLOT_NODE_ORDER_STEP +
-        niPlotTypeRank(plot);
-}
-
-function niPlotManualOrder(plot) {
-    return niMaybeNumber(
-        plot?._manualOrder ??
-        plot?.manual_order ??
-        plot?.manualOrder ??
-        plot?._sortOrder ??
-        plot?.sort_order
-    );
-}
-
-function niPlotStoryOrder(plot, fallback = 0) {
-    const manual = niPlotManualOrder(plot);
-    return manual != null ? manual : niPlotBaseOrder(plot, fallback);
-}
-
-function niComparePlotOrder(a, b) {
-    const aFallback = niFiniteNumber(a?._originalIdx ?? a?._origIdx ?? a?._sourceIdx, 0);
-    const bFallback = niFiniteNumber(b?._originalIdx ?? b?._origIdx ?? b?._sourceIdx, 0);
-    return niPlotStoryOrder(a, aFallback) - niPlotStoryOrder(b, bFallback) ||
-        niPlotTypeRank(a) - niPlotTypeRank(b) ||
-        aFallback - bFallback;
-}
-
-function niComparePlotBaseOrder(a, b) {
-    const aFallback = niFiniteNumber(a?._originalIdx ?? a?._origIdx ?? a?._sourceIdx, 0);
-    const bFallback = niFiniteNumber(b?._originalIdx ?? b?._origIdx ?? b?._sourceIdx, 0);
-    return niPlotBaseOrder(a, aFallback) - niPlotBaseOrder(b, bFallback) ||
-        niPlotTypeRank(a) - niPlotTypeRank(b) ||
-        aFallback - bFallback;
-}
-
-function niSortPlotsByStoryOrder(items) {
-    return (items || []).sort(niComparePlotOrder);
-}
-
-function niHashShort(text) {
-    let h = 2166136261;
-    const s = String(text || '');
-    for (let i = 0; i < s.length; i++) {
-        h ^= s.charCodeAt(i);
-        h = Math.imul(h, 16777619);
-    }
-    return (h >>> 0).toString(36);
-}
-
-function niEnsurePlotNodeId(plot, type = 'main', index = 0) {
-    if (!plot || typeof plot !== 'object') return `${type}:${index}`;
-    const existing = plot._nodeId || plot.node_id || plot.nodeId || plot.id;
-    if (existing) {
-        plot._nodeId = String(existing);
-        return plot._nodeId;
-    }
-    const chunk = niPlotChunkIdx(plot, index);
-    const order = niPlotChunkOrder(plot, index);
-    plot._nodeId = `${type}:${chunk}:${order}:${niHashShort(`${plot.title || ''}\n${plot.body || ''}`)}`;
-    return plot._nodeId;
-}
-
-function niNormalizeIncomingPlots(incoming) {
-    if (Array.isArray(incoming)) return incoming;
-    if (!incoming || typeof incoming !== 'object') return [];
-    return ['main', 'sub', 'pivot'].flatMap(type =>
-        (Array.isArray(incoming[type]) ? incoming[type] : [])
-            .map(plot => ({ ...(plot || {}), type: plot?.type || type }))
-    );
-}
-
-function niOrderedPlotEntries(groups) {
-    return groups.flatMap(({ type, items }) =>
-        (items || []).map((plot, index) => {
-            if (plot && typeof plot === 'object') niEnsurePlotNodeId(plot, type, index);
-            return {
-                ...(plot || {}),
-                type: plot?.type || type,
-                _type: type,
-                _sourceIdx: index,
-                _originalIdx: plot?._originalIdx ?? index,
-                _plotRef: plot,
-            };
-        })
-    ).sort(niComparePlotOrder);
-}
-
-function niGetAllPlotsInStoryOrder() {
-    return niOrderedPlotEntries([
-        { type: 'main', items: S.plots.main || [] },
-        { type: 'sub', items: S.plots.sub || [] },
-        { type: 'pivot', items: S.plots.pivot || [] },
-    ]);
-}
-
-function niMergeStageNodes(nodes) {
-    return niOrderedPlotEntries([
-        { type: 'main', items: nodes?.main || [] },
-        { type: 'sub', items: nodes?.sub || [] },
-        { type: 'pivot', items: nodes?.pivot || [] },
-    ]);
-}
-
-function niRebuildStageMapFromPlotStageIdx() {
-    if (S.stageMapN <= 0) return;
-    const rebuilt = {};
-    const main = S.plots.main || [];
-    const pivot = S.plots.pivot || [];
-    main.forEach((plot, i) => {
-        if (plot?.stageIdx == null) return;
-        rebuilt[i] = plot.stageIdx;
-    });
-    pivot.forEach((plot, i) => {
-        if (plot?.stageIdx == null) return;
-        rebuilt[main.length + i] = plot.stageIdx;
-    });
-    if (Object.keys(rebuilt).length) S.stageMap = rebuilt;
-}
-
 function niApplyManualPlotOrderForType(type, orderedRefs = null) {
     const refs = (orderedRefs || S.plots[type] || []).filter(Boolean);
-    const all = niGetAllPlotsInStoryOrder().sort(niComparePlotBaseOrder);
+    const all = getAllPlotsInStoryOrder(S).sort(niComparePlotBaseOrder);
     const slots = all
         .map((entry, index) => entry._type === type ? niPlotBaseOrder(entry, index) : null)
         .filter(slot => slot != null);
@@ -4007,7 +3936,7 @@ function niApplyManualPlotOrderForType(type, orderedRefs = null) {
         ref._manualOrder = nextSlot;
     });
     S.plots[type] = refs;
-    niRebuildStageMapFromPlotStageIdx();
+    rebuildStageMapFromPlotStageIdx(S);
     niSyncSubPlotStageAssignments();
 }
 
@@ -4022,42 +3951,28 @@ function niMovePlotByDisplayPosition(type, fromPos, toPos) {
     return true;
 }
 
-function niNormalizePlotCollections() {
-    ['main', 'sub', 'pivot'].forEach(type => {
-        if (!Array.isArray(S.plots[type])) S.plots[type] = [];
-        S.plots[type].forEach((plot, index) => {
-            if (!plot || typeof plot !== 'object') return;
-            plot.type = plot.type || type;
-            plot._chunkIdx = niPlotChunkIdx(plot, plot._chunkIdx ?? 0);
-            plot._chunkOrder = niPlotChunkOrder(plot, index);
-            if (plot.stageIdx != null && !plot.stageLabel) plot.stageLabel = `第 ${plot.stageIdx} 阶段`;
-            niEnsurePlotNodeId(plot, type, index);
-        });
-        niSortPlotsByStoryOrder(S.plots[type]);
-    });
-    niRebuildStageMapFromPlotStageIdx();
-    niSyncSubPlotStageAssignments();
-}
-
-function niCapturePlotOrderMemory() {
-    const memory = new Map();
-    ['main', 'sub', 'pivot'].forEach(type => {
-        (S.plots[type] || []).forEach((plot, index) => {
-            const manual = niPlotManualOrder(plot);
-            if (manual == null) return;
-            memory.set(niEnsurePlotNodeId(plot, type, index), manual);
-        });
-    });
-    return memory;
-}
-
-function niRestorePlotOrderMemory(memory) {
-    if (!memory || !memory.size) return;
-    ['main', 'sub', 'pivot'].forEach(type => {
-        (S.plots[type] || []).forEach((plot, index) => {
-            const id = niEnsurePlotNodeId(plot, type, index);
-            if (memory.has(id)) plot._manualOrder = memory.get(id);
-        });
+async function dbRemapSourceChunkIndices(indexMap) {
+    if (!(indexMap instanceof Map) || !indexMap.size || !S.novelKey) return 0;
+    await dbOpen();
+    return new Promise((resolve, reject) => {
+        const tx = S.db.transaction(DB_STORE, 'readwrite');
+        const idx = tx.objectStore(DB_STORE).index('novelKey');
+        const req = idx.openCursor(S.novelKey);
+        let updated = 0;
+        req.onsuccess = () => {
+            const cursor = req.result;
+            if (!cursor) return;
+            const row = cursor.value || {};
+            const oldSource = Number(row.sourceChunkIdx);
+            if (indexMap.has(oldSource)) {
+                row.sourceChunkIdx = indexMap.get(oldSource);
+                cursor.update(row);
+                updated++;
+            }
+            cursor.continue();
+        };
+        tx.oncomplete = () => resolve(updated);
+        tx.onerror = () => reject(tx.error);
     });
 }
 
@@ -5361,7 +5276,7 @@ function niIsUserSubProtectedChar(c, idx) {
     const selectedIdx = parseInt(cfg.userSubCharIdx, 10);
     if (!Number.isNaN(selectedIdx) && selectedIdx === idx) return true;
     const selectedName = niGetSelectedUserSubCharName();
-    return !!selectedName && _isSameChar(c, { name: selectedName });
+    return !!selectedName && isSameCharacter(c, { name: selectedName });
 }
 
 function niCanUseAliasTextForPresence(alias) {
@@ -5417,12 +5332,12 @@ function niPresenceHasTerm(normalizedText, term) {
 function niCharNameMatchesTerm(c, term) {
     const t = String(term || '').trim();
     if (!c?.name || !t) return false;
-    if (_isSameChar(c, { name: t })) return true;
+    if (isSameCharacter(c, { name: t })) return true;
     return (Array.isArray(c.aliases) ? c.aliases : []).some(alias => {
         const aliasText = String(alias?.text || '').trim();
         const ownerName = String(alias?.character_name || '').trim();
-        return (aliasText && _isSameChar({ name: aliasText }, { name: t })) ||
-            (ownerName && _isSameChar({ name: ownerName }, { name: t }));
+        return (aliasText && isSameCharacter({ name: aliasText }, { name: t })) ||
+            (ownerName && isSameCharacter({ name: ownerName }, { name: t }));
     });
 }
 
@@ -6332,7 +6247,7 @@ function niUpdateVecOffBtn() {
 async function niCheckFillBtnVisibility() {
     const fillBtn = q('#ni-btn-vec-fill');
     if (!fillBtn || S._vecRunning) return;
-    if (!S.cleanDone || !S.chunkStatus || !S.chunkStatus.length) {
+    if (!canUseDerivedModules(S)) {
         fillBtn.style.display = 'none';
         return;
     }
@@ -6354,14 +6269,8 @@ async function niCheckFillBtnVisibility() {
             const vecText = (S.chunkResults[i] && S.chunkResults[i].trim())
                 ? S.chunkResults[i] : (S.chunks[i] || '');
             if (!vecText.trim()) continue;
-            let assignedStages;
-            if (S.chunkStageMap && S.chunkStageMap[i] && S.chunkStageMap[i].size > 0) {
-                assignedStages = [...S.chunkStageMap[i]];
-            } else {
-                const si = (S.stageMapN > 0 && (S.stageMap[i] !== undefined || S.stageMap[String(i)] !== undefined))
-                    ? (S.stageMap[i] ?? S.stageMap[String(i)]) : 1;
-                assignedStages = [si];
-            }
+            const assignedStages = getAssignedStagesForChunk(S, i);
+            if (!assignedStages.length) continue;
             for (const si of assignedStages) {
                 if (!stageBuckets[si]) stageBuckets[si] = [];
                 const subChunks = splitText(vecText, 500);
@@ -6390,6 +6299,13 @@ async function niCheckFillBtnVisibility() {
 function buildStages() {
     const list = q('#ni-stage-list');
     if (!list) return;
+
+    if (!canUseDerivedModules(S)) {
+        list.innerHTML = '<div class="ni-empty"><i class="ti ti-layout-list"></i>完成至少一个分段并停止清洗后可进行阶段划分和向量化</div>';
+        updateStageLbl();
+        niRenderVecStageSelector();
+        return;
+    }
 
     // 更新「关闭向量化注入」按钮的显示状态
     niUpdateVecOffBtn();
@@ -6497,128 +6413,22 @@ function buildStages() {
 // ============================================================
 // API 限速队列：每分钟最多 N 次，超出后自动排队等待
 // ============================================================
-function niParseRateLimit(value, fallback = 3) {
-    const n = parseInt(value, 10);
-    return Number.isFinite(n) ? Math.max(0, n) : fallback;
-}
-
-function niQueueLastAt(key) {
-    try {
-        const n = parseInt(localStorage.getItem(key) || '0', 10);
-        return Number.isFinite(n) ? n : 0;
-    } catch (_) {
-        return 0;
-    }
-}
-
-function niSaveQueueLastAt(key, value) {
-    try { localStorage.setItem(key, String(value || 0)); } catch (_) {}
-}
-
-const _apiQueue = {
-    maxPerMin: (extension_settings[EXT_NAME]?.apiRateLimit ?? 3),
-    timestamps: [],  // 最近请求完成的时间戳
-    pending: [],     // 等待槽位的 resolve 回调
-    processing: false,
+const _apiQueue = new PersistedRateQueue({
     storageKey: `${EXT_NAME}:api-last-request-at`,
-    lastAt: niQueueLastAt(`${EXT_NAME}:api-last-request-at`),
-
-    // 申请一个请求槽，拿到后才能发请求
-    async acquire() {
-        return new Promise(resolve => {
-            this.pending.push(resolve);
-            this._flush();
-        });
-    },
-
-    _flush() {
-        if (this.processing) return;
-        this.processing = true;
-        this._tick();
-    },
-
-    _tick() {
-        if (!this.pending.length) { this.processing = false; return; }
-
-        const limit = niParseRateLimit(extension_settings[EXT_NAME]?.apiRateLimit, 3);
-        if (limit <= 0) {
-            // 不限速，全部放行
-            const all = this.pending.splice(0);
-            all.forEach(r => r());
-            this.processing = false;
-            return;
-        }
-
-        const now = Date.now();
-        const minGap = Math.ceil(60000 / limit) + 250;
-        const waitMs = Math.max(0, (this.lastAt || 0) + minGap - now);
-        if (waitMs > 0) {
-            setTimeout(() => this._tick(), waitMs);
-            return;
-        }
-
-        const resolve = this.pending.shift();
-        this.lastAt = Date.now();
-        niSaveQueueLastAt(this.storageKey, this.lastAt);
-        resolve();
-        setTimeout(() => this._tick(), 0);
-    },
-};
+    getLimit: () => extension_settings[EXT_NAME]?.apiRateLimit,
+});
 
 // 向量化 API 限速队列
-const _vecQueue = {
-    maxPerMin: (extension_settings[EXT_NAME]?.vecRateLimit ?? 3),
-    timestamps: [],
-    pending: [],
-    processing: false,
+const _vecQueue = new PersistedRateQueue({
     storageKey: `${EXT_NAME}:vec-last-request-at`,
-    lastAt: niQueueLastAt(`${EXT_NAME}:vec-last-request-at`),
-
-    async acquire() {
-        return new Promise(resolve => {
-            this.pending.push(resolve);
-            this._flush();
-        });
-    },
-
-    _flush() {
-        if (this.processing) return;
-        this.processing = true;
-        this._tick();
-    },
-
-    _tick() {
-        if (!this.pending.length) { this.processing = false; return; }
-
-        const limit = niParseRateLimit(extension_settings[EXT_NAME]?.vecRateLimit, 3);
-        if (limit <= 0) {
-            const all = this.pending.splice(0);
-            all.forEach(r => r());
-            this.processing = false;
-            return;
-        }
-
-        const now = Date.now();
-        const minGap = Math.ceil(60000 / limit) + 250;
-        const waitMs = Math.max(0, (this.lastAt || 0) + minGap - now);
-        if (waitMs > 0) {
-            setTimeout(() => this._tick(), waitMs);
-            return;
-        }
-
-        const resolve = this.pending.shift();
-        this.lastAt = Date.now();
-        niSaveQueueLastAt(this.storageKey, this.lastAt);
-        resolve();
-        setTimeout(() => this._tick(), 0);
-    },
-};
+    getLimit: () => extension_settings[EXT_NAME]?.vecRateLimit,
+});
 
 // ============================================================
 // 自动生成阶段标题和概括
 // ============================================================
 // 角色/阶段概括专用：强制串行，不受 apiConcurrency 影响
-async function niAcquireApiSeqSlot(signal = null) {
+async function niAcquireApiRateSlot(signal = null) {
     if (!signal) {
         await _apiQueue.acquire();
         return;
@@ -6639,7 +6449,7 @@ async function niAcquireApiSeqSlot(signal = null) {
 
 async function callApiSeq(messages, { responseLength = 1000, signal = null } = {}) {
     // 等待限速槽位
-    await niAcquireApiSeqSlot(signal);
+    await niAcquireApiRateSlot(signal);
     const cfg = extension_settings[EXT_NAME];
 
     if (niUseTavernGlobalPreset(cfg)) {
@@ -6813,7 +6623,7 @@ function niBuildCharAiProfileContext(c, idx) {
         .join('\n')
         .slice(-30000);
 
-    const allNodes = niGetAllPlotsInStoryOrder();
+    const allNodes = getAllPlotsInStoryOrder(S);
     const novelCtx = allNodes
         .filter(p => niCharAiTextHasTarget([
             p.title,
@@ -6889,7 +6699,7 @@ function niParseCharAiProfile(raw, c) {
     }
 
     const target = String(parsed.target || parsed.name || '').trim();
-    if (target && !niCharNameMatchesTerm(c, target) && !_isSameChar(c, { name: target })) {
+    if (target && !niCharNameMatchesTerm(c, target) && !isSameCharacter(c, { name: target })) {
         throw new Error(`AI 返回目标角色不匹配：${target}`);
     }
 
@@ -6991,7 +6801,7 @@ async function niApplyCharAiProfile(i, profile) {
 }
 
 async function niGenCharsManual(silent = false, skipIndices = null) {
-    if (!S.cleanDone || !S.characters.length) {
+    if (!canUseDerivedModules(S) || !S.characters.length) {
         if (!silent) alert('请先完成清洗，生成角色数据后再更新人设');
         return;
     }
@@ -7116,7 +6926,7 @@ async function niGenCharsManual(silent = false, skipIndices = null) {
 window.niGenCharsManual = niGenCharsManual;
 
 async function niGenOneCharManual(i) {
-    if (!S.cleanDone || !S.characters.length) {
+    if (!canUseDerivedModules(S) || !S.characters.length) {
         alert('请先完成清洗，生成角色数据后再更新人设');
         return;
     }
@@ -7174,7 +6984,7 @@ window.niGenOneCharManual = niGenOneCharManual;
 // ============================================================
 let _genStagesRunning = false;
 async function niGenStagesManual(skipExisting = false) {
-    if (!S.cleanDone) { alert('请先完成清洗后再调用 AI 生成阶段概括'); return; }
+    if (!canUseDerivedModules(S)) { alert('请先完成至少一个分段并停止清洗，再调用 AI 生成阶段概括'); return; }
     if (S.stageMapN <= 0) { alert('请先在剧情页完成阶段划分，再生成阶段概括'); return; }
     if (_genStagesRunning) return;
     _genStagesRunning = true;
@@ -7531,7 +7341,7 @@ window.niGoPlot = niGoPlot;
 // 向量化
 // ============================================================
 function niVectorConcurrencyLimit() {
-    return niConcurrencyLimit(extension_settings[EXT_NAME]?.vecConcurrency, DEFAULT_SETTINGS.vecConcurrency);
+    return concurrencyLimit(extension_settings[EXT_NAME]?.vecConcurrency, DEFAULT_SETTINGS.vecConcurrency);
 }
 
 async function niRunVectorItems(items, worker) {
@@ -7548,7 +7358,7 @@ async function niRunVectorItems(items, worker) {
 }
 
 async function niStartVec() {
-    if (!S.cleanDone) return;
+    if (!canUseDerivedModules(S)) { alert('请先完成至少一个分段并停止清洗，再进行向量化'); return; }
     const cfg = extension_settings[EXT_NAME];
     const stageN = S.stageMapN > 0 ? S.stageMapN : 1;
 
@@ -7585,7 +7395,7 @@ async function niStartVec() {
     const vpCard     = q('#ni-vp-card');
 
     // 向量化需要压缩正文；chunks 默认懒加载，使用前再读取。
-    if (S.cleanDone && (!S.chunkStatus || S.chunkStatus.length === 0 || !niHasLoadedChunks())) {
+    if (canUseDerivedModules(S) && (!S.chunkStatus || S.chunkStatus.length === 0 || !niHasLoadedChunks())) {
         if (S.novelKey) {
             if (titleNote2) titleNote2.textContent = '正在加载文本数据…';
             try {
@@ -7638,17 +7448,8 @@ async function niStartVec() {
             : (S.chunks[i] || '');
         if (!vecText.trim()) continue;
 
-        let assignedStages;
-        if (S.chunkStageMap && S.chunkStageMap[i] && S.chunkStageMap[i].size > 0) {
-            // 方案B：chunkStageMap key 是 realChunkIdx
-            assignedStages = [...S.chunkStageMap[i]];
-        } else {
-            // fallback：旧 stageMap
-            const si = (S.stageMapN > 0 && (S.stageMap[i] !== undefined || S.stageMap[String(i)] !== undefined))
-                ? (S.stageMap[i] ?? S.stageMap[String(i)])
-                : 1;
-            assignedStages = [si];
-        }
+        const assignedStages = getAssignedStagesForChunk(S, i);
+        if (!assignedStages.length) continue;
 
         for (const si of assignedStages) {
             if (!selectedStages.has(si)) continue;
@@ -7661,6 +7462,11 @@ async function niStartVec() {
     let totalDone = 0;
     const stageIdxList = Object.keys(stageBuckets).map(Number);
     const totalChunks = stageIdxList.reduce((a, k) => a + stageBuckets[k].length, 0);
+    selectedStages.forEach(si => {
+        const expected = stageBuckets[si]?.length || 0;
+        if (expected > 0) S.stageVecExpected[Number(si)] = expected;
+        else delete S.stageVecExpected[Number(si)];
+    });
     if (totalChunks <= 0) {
         selectedStages.forEach(si => delete S.stageVecDone[Number(si)]);
         S._vecRunning = false;
@@ -7674,8 +7480,6 @@ async function niStartVec() {
     // 记录各阶段是否有失败的 chunk，失败则不标记 vecDone
     const stageFailCount = {};
 
-    const stageErrorMsgs = {}; // 记录各阶段最后一条错误信息
-    const _failedChunks = []; // 记录失败的具体 chunk，供「补全缺失」使用
     for (const si of stageIdxList) {
         if (titleNote2) titleNote2.textContent = `正在向量化第 ${si}/${stageN} 阶段…`;
         const items = stageBuckets[si];
@@ -7687,9 +7491,6 @@ async function niStartVec() {
             } catch (e) {
                 console.error(`[NI] 向量化失败 stage=${si} chunk=${ci}:`, e);
                 stageFailCount[si] = (stageFailCount[si] || 0) + 1;
-                stageErrorMsgs[si] = e.message || String(e);
-                const item = typeof rawItem === 'string' ? { text: rawItem, sourceChunkIdx: ci } : rawItem;
-                _failedChunks.push({ si, ci, text: item.text, sourceChunkIdx: item.sourceChunkIdx });
             }
             totalDone++;
             if (titleBar2) titleBar2.style.width = `${Math.round((totalDone / totalChunks) * 95)}%`;
@@ -7705,7 +7506,6 @@ async function niStartVec() {
             titleNote2.classList.remove('g');
         }
         setBtn('#ni-btn-vec', false, '<i class="ti ti-alert-triangle"></i>向量化未完成');
-        S._vecFailedChunks = _failedChunks;
         S._vecFillVisible = true;
         const fillBtn = q('#ni-btn-vec-fill');
         if (fillBtn) fillBtn.style.display = 'flex';
@@ -7744,7 +7544,7 @@ window.niStartVec = niStartVec;
 
 // 补全缺失向量块：对比 IndexedDB 已有记录与应有的完整列表，只补跑缺失的 chunk
 async function niVecFillMissing() {
-    if (!S.cleanDone) { alert('请先完成清洗后再补全'); return; }
+    if (!canUseDerivedModules(S)) { alert('请先完成至少一个分段并停止清洗，再补全向量'); return; }
 
     const fillBtn = q('#ni-btn-vec-fill');
     if (fillBtn) fillBtn.style.display = 'none';
@@ -7788,14 +7588,8 @@ async function niVecFillMissing() {
             ? S.chunkResults[i] : (S.chunks[i] || '');
         if (!vecText.trim()) continue;
 
-        let assignedStages;
-        if (S.chunkStageMap && S.chunkStageMap[i] && S.chunkStageMap[i].size > 0) {
-            assignedStages = [...S.chunkStageMap[i]];
-        } else {
-            const si = (S.stageMapN > 0 && (S.stageMap[i] !== undefined || S.stageMap[String(i)] !== undefined))
-                ? (S.stageMap[i] ?? S.stageMap[String(i)]) : 1;
-            assignedStages = [si];
-        }
+        const assignedStages = getAssignedStagesForChunk(S, i);
+        if (!assignedStages.length) continue;
         for (const si of assignedStages) {
             if (!stageBuckets[si]) stageBuckets[si] = [];
             const subChunks = splitText(vecText, 500);
@@ -7807,6 +7601,7 @@ async function niVecFillMissing() {
     const missingChunks = []; // { si, ci, text, sourceChunkIdx }
     for (const [siStr, items] of Object.entries(stageBuckets)) {
         const si = Number(siStr);
+        S.stageVecExpected[si] = items.length;
         for (let ci = 0; ci < items.length; ci++) {
             if (!existingKeys.has(`s${si}_c${ci}`)) {
                 const item = typeof items[ci] === 'string' ? { text: items[ci], sourceChunkIdx: ci } : items[ci];
@@ -7816,6 +7611,9 @@ async function niVecFillMissing() {
     }
 
     if (missingChunks.length === 0) {
+        await niReconcileVecStateFromDb({ persist: false });
+        buildStages();
+        persistVecState();
         if (titleNote2) { titleNote2.textContent = '无缺失块，向量化已完整'; titleNote2.classList.add('g'); }
         if (titleBar2) { titleBar2.style.width = '100%'; titleBar2.classList.add('g'); }
         setBtn('#ni-btn-vec', false, '<i class="ti ti-check"></i>向量化完成');
@@ -7844,8 +7642,6 @@ async function niVecFillMissing() {
     });
 
     if (titleBar2) { titleBar2.style.width = '100%'; titleBar2.classList.add('g'); }
-    S._vecFailedChunks = stillFailed;
-
     if (stillFailed.length > 0) {
         if (titleNote2) { titleNote2.textContent = `补全完成，仍有 ${stillFailed.length} 个块失败`; titleNote2.classList.remove('g'); }
         setBtn('#ni-btn-vec', false, '<i class="ti ti-check"></i>向量化完成');
@@ -7880,7 +7676,10 @@ function niRenderVecStageSelector() {
     // 同时更新 card 内与 modal 内列表
     const targets = [q('#ni-vec-stage-selector')].filter(Boolean);
     const n = S.stageMapN;
-    if (n <= 0) { targets.forEach(w => { w.style.display = 'none'; }); return; }
+    if (!canUseDerivedModules(S) || n <= 0) {
+        targets.forEach(w => { w.style.display = 'none'; });
+        return;
+    }
     const html = Array.from({length: n}, (_, i) => {
         const idx = i + 1;
         const title = S.stageTitles[idx] || `阶段 ${idx}`;
@@ -7896,6 +7695,7 @@ function niRenderVecStageSelector() {
 }
 
 function niToggleStagePanel() {
+    if (!canUseDerivedModules(S)) { alert('请先完成至少一个分段并停止清洗，再进行向量化'); return; }
     if (S.stageMapN <= 0) { alert('请先完成阶段划分再向量化'); return; }
     niRenderVecStageSelector();
     niTogglePanel('ni-vec-stage-panel', 'ni-vec-stage-btn');
@@ -7906,21 +7706,33 @@ window.niRenderVecStageSelector = niRenderVecStageSelector;
 // ============================================================
 // Embedding API 调用
 // ============================================================
-async function embedText(text) {
+async function niRequestEmbeddings(inputs) {
     const cfg = extension_settings[EXT_NAME];
     const base = (cfg.vecUrl || '').replace(/\/+$/, '').replace(/\/embeddings$/, '');
     const endpoint = `${base}/embeddings`;
 
     await _vecQueue.acquire();
-    return withVecSemaphore(async () => {
-        const resp = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${cfg.vecKey}`,
-            },
-            body: JSON.stringify({ model: cfg.vecModel, input: [text] }),
-        });
+    return runWithSemaphore(VecSemaphore, async () => {
+        const controller = new AbortController();
+        const timeoutMs = Math.max(1, Number(cfg.apiTimeoutMin) || DEFAULT_SETTINGS.apiTimeoutMin) * 60 * 1000;
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        let resp;
+        try {
+            resp = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${cfg.vecKey}`,
+                },
+                body: JSON.stringify({ model: cfg.vecModel, input: inputs }),
+                signal: controller.signal,
+            });
+        } catch (e) {
+            if (e?.name === 'AbortError') throw new Error(`Embedding 请求超过 ${Math.ceil(timeoutMs / 60000)} 分钟，已自动中止`);
+            throw e;
+        } finally {
+            clearTimeout(timeoutId);
+        }
 
         if (!resp.ok) {
             const txt = await resp.text().catch(() => '');
@@ -7928,10 +7740,16 @@ async function embedText(text) {
         }
 
         const json = await resp.json();
-        const vec = json?.data?.[0]?.embedding;
-        if (!Array.isArray(vec)) throw new Error('Embedding API 返回格式异常');
-        return vec;
+        const vectors = json?.data?.map(item => item?.embedding);
+        if (!Array.isArray(vectors) || vectors.length !== inputs.length || vectors.some(v => !Array.isArray(v))) {
+            throw new Error('Embedding API 返回格式异常');
+        }
+        return vectors;
     });
+}
+
+async function embedText(text) {
+    return (await niRequestEmbeddings([text]))[0];
 }
 
 // ============================================================
@@ -7969,94 +7787,6 @@ function extractMesText(mes, tag) {
 // 向量召回
 // ============================================================
 
-function niNormalizeRecallText(text) {
-    return String(text || '').replace(/\r\n/g, '\n').trim();
-}
-
-function niBuildTbLightRecallContext(curNode) {
-    if (!curNode) return null;
-    const anchorChunkIdx = Number.isFinite(Number(curNode._chunkIdx)) ? Number(curNode._chunkIdx) : null;
-    return {
-        anchorChunkIdx,
-        stageIdx: Number(curNode.stageIdx) || null,
-        title: (curNode.title || '').trim(),
-        time: (curNode.time || '').trim(),
-        location: (curNode.location || '').trim(),
-    };
-}
-
-function niGetVectorSourceChunkIdx(chunk) {
-    const n = Number(chunk?.sourceChunkIdx);
-    return Number.isFinite(n) ? n : null;
-}
-
-function niRecallStoryOrder(chunk) {
-    const sourceChunkIdx = niGetVectorSourceChunkIdx(chunk);
-    if (sourceChunkIdx != null) return sourceChunkIdx;
-    const stageIdx = niFiniteNumber(chunk?.stageIdx, 0);
-    const chunkIdx = niFiniteNumber(chunk?.chunkIdx, 0);
-    return stageIdx * NI_PLOT_CHUNK_ORDER_STEP + chunkIdx;
-}
-
-function niCompareRecallStoryOrder(a, b) {
-    return niRecallStoryOrder(a) - niRecallStoryOrder(b) ||
-        niFiniteNumber(a?.stageIdx, 0) - niFiniteNumber(b?.stageIdx, 0) ||
-        niFiniteNumber(a?.chunkIdx, 0) - niFiniteNumber(b?.chunkIdx, 0) ||
-        niFiniteNumber(b?.score, 0) - niFiniteNumber(a?.score, 0);
-}
-
-function niSelectRecallCandidatesInStoryOrder(candidates, topK) {
-    return candidates
-        .sort((a, b) => b.score - a.score)
-        .slice(0, topK)
-        .sort(niCompareRecallStoryOrder);
-}
-
-function niTbLightRecallCandidateAllowed(chunk, lightCtx) {
-    if (!lightCtx) return true;
-    const sourceChunkIdx = niGetVectorSourceChunkIdx(chunk);
-    if (sourceChunkIdx == null || lightCtx.anchorChunkIdx == null) return true;
-    return sourceChunkIdx <= lightCtx.anchorChunkIdx;
-}
-
-function niSplitRecallSections(text) {
-    return niNormalizeRecallText(text)
-        .split(/\n\s*---\s*\n/g)
-        .map(s => s.trim())
-        .filter(Boolean);
-}
-
-function niFindTbLightRecallAnchor(text, lightCtx) {
-    const anchors = [lightCtx?.time, lightCtx?.title]
-        .map(v => String(v || '').trim())
-        .filter(v => v.length >= 2);
-    for (const anchor of anchors) {
-        const idx = text.indexOf(anchor);
-        if (idx >= 0) return { idx, length: anchor.length };
-    }
-    return null;
-}
-
-function niTbCutSectionAtFutureTime(section, lightCtx) {
-    const text = niNormalizeRecallText(section);
-    const anchor = niFindTbLightRecallAnchor(text, lightCtx);
-    if (!anchor) return text;
-
-    const afterAnchor = text.slice(anchor.idx + anchor.length);
-    const futureTimeMatch = afterAnchor.match(/\n\s*(?:时间[:：]\s*)?(?:第[一二三四五六七八九十百千万\d]+[章节回幕]|[一二三四五六七八九十〇零\d]+年(?:[一二三四五六七八九十〇零\d]+月)?(?:[一二三四五六七八九十〇零\d]+日)?|[一二三四五六七八九十〇零\d]+月[一二三四五六七八九十〇零\d]+日|翌日|次日|同日|当日|当夜|入夜|清晨|黄昏|午后|傍晚|深夜|第二天|第三天|数日后|几日后|不久后)[^\n]{0,40}/);
-    if (!futureTimeMatch || futureTimeMatch.index == null) return text;
-    const cutAt = anchor.idx + anchor.length + futureTimeMatch.index;
-    return text.slice(0, cutAt).trim();
-}
-
-function niApplyTbLightRecallCut(text, lightCtx) {
-    if (!lightCtx) return text;
-    const sections = niSplitRecallSections(text)
-        .map(section => niTbCutSectionAtFutureTime(section, lightCtx))
-        .filter(Boolean);
-    return sections.join('\n\n---\n\n');
-}
-
 // 加权向量召回：接收 [{text, weight},...] 批量 embedding，指数衰减加权合并后召回
 async function recallRelevantWeighted(weightedQueries, stageList, opts = {}) {
     const cfg = extension_settings[EXT_NAME];
@@ -8078,17 +7808,7 @@ async function recallRelevantWeighted(weightedQueries, stageList, opts = {}) {
     const inputs = weightedQueries.map(q => instruct + q.text);
     let vecs;
     try {
-        const base = (cfg.vecUrl || '').replace(/\/+$/, '').replace(/\/embeddings$/, '');
-        await _vecQueue.acquire();
-        const resp = await withVecSemaphore(async () => fetch(`${base}/embeddings`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.vecKey}` },
-            body: JSON.stringify({ model: cfg.vecModel, input: inputs }),
-        }));
-        if (!resp.ok) { const t = await resp.text().catch(() => ''); throw new Error(`Embedding API ${resp.status}: ${t.slice(0, 200)}`); }
-        const json = await resp.json();
-        vecs = json?.data?.map(d => d.embedding);
-        if (!vecs || vecs.length !== inputs.length) throw new Error('Embedding API 返回向量数量异常');
+        vecs = await niRequestEmbeddings(inputs);
     } catch (e) { console.warn('[NI] 加权查询向量化失败:', e); return ''; }
 
     // 加权合并：各向量 × 对应权重求和，再归一化
@@ -8105,6 +7825,7 @@ async function recallRelevantWeighted(weightedQueries, stageList, opts = {}) {
     catch (e) { console.warn('[NI] 加载向量失败:', e); return ''; }
 
     const candidates = allChunks
+        .filter(row => isVectorRowCompatible(row, getVectorFingerprint()))
         .filter(c => enabledStages.has(c.stageIdx))
         .filter(c => niTbLightRecallCandidateAllowed(c, lightCtx))
         .map(c => ({ ...c, score: cosineSim(combined, c.vector) }))
@@ -8140,6 +7861,7 @@ async function recallRelevant(queryText, stageList) {
     catch (e) { console.warn('[NI] 加载向量失败:', e); return ''; }
 
     const candidates = allChunks
+        .filter(row => isVectorRowCompatible(row, getVectorFingerprint()))
         .filter(c => enabledStages.has(c.stageIdx))
         .map(c => ({ ...c, score: cosineSim(queryVec, c.vector) }))
         .filter(c => c.score >= thresh);
@@ -8154,12 +7876,6 @@ async function recallRelevant(queryText, stageList) {
 // ============================================================
 function niDevCleanText(v) {
     return String(v ?? '').trim();
-}
-
-function niDevLines(title, items) {
-    const arr = Array.isArray(items) ? items.map(niDevCleanText).filter(Boolean) : [];
-    if (!arr.length) return '';
-    return `【${title}】\n${arr.map(t => `- ${t}`).join('\n')}`;
 }
 
 function niDevListText(items) {
@@ -8223,10 +7939,6 @@ function niMergeDeviationSections(existing, next) {
         currentConstraint: nextSections.currentConstraint,
         preservedFacts: nextSections.preservedFacts,
     });
-}
-
-function niBuildDeviationGuideFromAnalysis(json) {
-    return niBuildDeviationGuideFromSections(niBuildDeviationSectionsFromAnalysis(json));
 }
 
 function niDevButtonLabel() {
@@ -8496,35 +8208,6 @@ function niGetDevRetryRange(auto = false) {
     return niNormalizeDevRange({ startFloor: Math.max(1, covered - limit + 1), endFloor: covered });
 }
 
-function niBuildDeviationRangeBlock(range, guide, { keepEmpty = false } = {}) {
-    const text = String(guide || '').trim();
-    if (!text && !keepEmpty) return '';
-    return `【${niDevRangeLabel(range)}偏差】\n${text || '本范围未发现需要新增的重大偏差。'}`;
-}
-
-function niReplaceDeviationRangeBlock(existing, range, block) {
-    const text = String(existing || '').trim();
-    const nextBlock = String(block || '').trim();
-    if (!text) return nextBlock;
-    const title = `【${niDevRangeLabel(range)}偏差】`;
-    const start = text.indexOf(title);
-    if (start < 0) return [text, nextBlock].filter(Boolean).join('\n\n');
-    const rest = text.slice(start + title.length);
-    const nextHeader = /\n{2,}【第\s*\d+(?:\s*[-－—至]\s*\d+)?\s*楼偏差】/;
-    const next = rest.match(nextHeader);
-    const before = text.slice(0, start).trimEnd();
-    const after = next ? rest.slice(next.index).trimStart() : '';
-    return [before, nextBlock, after].filter(Boolean).join('\n\n');
-}
-
-function niMergeDeviationGuide(existing, guide, range, { retry = false } = {}) {
-    const block = niBuildDeviationRangeBlock(range, guide, { keepEmpty: retry });
-    const text = String(existing || '').trim();
-    if (!block) return text;
-    if (retry) return niReplaceDeviationRangeBlock(text, range, block);
-    return [text, block].filter(Boolean).join('\n\n');
-}
-
 function niSetDevProgress(range) {
     const r = niNormalizeDevRange(range);
     if (!r) return;
@@ -8656,9 +8339,7 @@ async function niRunDev(options = {}) {
     S.devRunning = true;
     niSetDevButtonState({ running: true });
 
-    const devPanel = q('#ni-dev-panel');
     const noteEl = q('#ni-dev-note');
-    if (devPanel) devPanel.style.display = 'none';
     if (noteEl) noteEl.textContent = retry ? '正在重试偏差分析...' : '正在更新当前偏差...';
 
     try {
@@ -8822,12 +8503,6 @@ let _niDevAutoBatchRunning = false;
 
 function niDevCoveredFloorFor(total) {
     return niNormalizeDevCoveredFloorToTotal(total);
-}
-
-function niDevAutoCatchupReady(every, total = niCurrentChatFloorCount()) {
-    if (every <= 0 || !total) return false;
-    const covered = niDevCoveredFloorFor(total);
-    return total - covered >= every;
 }
 
 async function niMaybeAutoRunDev({ requireNewMessage = false, forceStart = false } = {}) {
@@ -9081,9 +8756,10 @@ async function niWorldCallApi(prompt, onRetry = null) {
 
 // AI 生成单个大类
 async function niWorldGenOne(idx) {
+    if (!canUseDerivedModules(S)) { alert('请先完成至少一个分段并停止清洗，再提取世界设定'); return; }
     const cats = niGetWorldCategories();
     if (!cats[idx]) return;
-    const allNodes = niGetAllPlotsInStoryOrder();
+    const allNodes = getAllPlotsInStoryOrder(S);
     if (!allNodes.length) { alert('请先完成清洗，生成剧情节点后再提取世界设定'); return; }
     const regenBtn = q(`.ni-world-regen[data-world-idx="${idx}"]`);
     const editBtn  = q(`.ni-world-edit[data-world-idx="${idx}"]`);
@@ -9102,7 +8778,8 @@ async function niWorldGenOne(idx) {
             if (regenBtn) regenBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i>缩写中…';
             const shrinkPrompt = WORLD_SHRINK_PROMPT.replace('{CONTENT}', final);
             try {
-                final = (await niWorldCallApi(shrinkPrompt)).trim();
+                const shrunk = (await niWorldCallApi(shrinkPrompt)).trim();
+                if (shrunk) final = shrunk;
             } catch (_) { /* 缩写失败就用原始结果*/ }
         }
         cats[idx].content = final;
@@ -9119,8 +8796,8 @@ async function niWorldGenOne(idx) {
 let _worldGenRunning = false;
 async function niWorldGenAll() {
     if (_worldGenRunning) return;
-    if (!S.cleanDone) { alert('请先完成清洗，生成剧情节点后再提取世界设定'); return; }
-    const allNodes = niGetAllPlotsInStoryOrder();
+    if (!canUseDerivedModules(S)) { alert('请先完成至少一个分段并停止清洗，再提取世界设定'); return; }
+    const allNodes = getAllPlotsInStoryOrder(S);
     if (!allNodes.length) { alert('请先完成清洗，生成剧情节点后再提取世界设定'); return; }
     _worldGenRunning = true;
     const btn = q('#ni-world-gen-all');
@@ -9181,9 +8858,9 @@ async function onPromptReady(eventData) {
     const cfg = extension_settings[EXT_NAME];
 
     // 获取 setExtensionPrompt 一次供后续使用
-    let setExtensionPrompt, extension_prompt_types;
+    let setExtensionPrompt;
     try {
-        ({ setExtensionPrompt, extension_prompt_types } = await import('/script.js'));
+        ({ setExtensionPrompt } = await import('/script.js'));
     } catch (e) {
         console.warn('[NI] 无法导入 setExtensionPrompt:', e);
     }
@@ -9193,11 +8870,7 @@ async function onPromptReady(eventData) {
         if (opts.applyUserSub !== false) content = niApplyUserSubstitution(content);
         if (!content.trim()) return;
         if (eventData?.chat && Array.isArray(eventData.chat)) {
-            const roleName = role === 1 ? 'user' : (role === 2 ? 'assistant' : 'system');
-            const msg = { role: roleName, content };
-            const lastUserIdx = eventData.chat.map(m => m?.role).lastIndexOf('user');
-            if (lastUserIdx >= 0) eventData.chat.splice(lastUserIdx, 0, msg);
-            else eventData.chat.push(msg);
+            niInsertIntoEventChat(eventData.chat, content, pos, depth, role);
         } else if (setExtensionPrompt) {
             setExtensionPrompt(key, content, pos, depth, true, role);
         }
@@ -9219,12 +8892,10 @@ async function onPromptReady(eventData) {
 
     // 已开启的阶段
     const n = S.stageMapN;
-    if (n <= 0) return;
     const enabledStages = [];
     for (let i = 1; i <= n; i++) {
         if (S.stageStates[i] !== false) enabledStages.push(i);
     }
-    if (!enabledStages.length) return;
 
     // 读取各自的注入配置
     const vecPos   = cfg.vecInjPos   ?? DEFAULT_SETTINGS.vecInjPos;
@@ -9430,9 +9101,8 @@ async function onPromptReady(eventData) {
     }
 
     // ── 文风注入 ──
-    const styleEnabled = cfg.styleInjEnabled ?? DEFAULT_SETTINGS.styleInjEnabled;
     const styleGuide   = (q('#ni-style-result')?.value || S.styleGuide || '').trim();
-    if (styleEnabled && styleGuide) {
+    if (styleGuide) {
         const stylePos   = cfg.styleInjPos   ?? DEFAULT_SETTINGS.styleInjPos;
         const styleDepth = cfg.styleInjDepth ?? DEFAULT_SETTINGS.styleInjDepth;
         const styleRole  = cfg.styleInjRole  ?? DEFAULT_SETTINGS.styleInjRole;
@@ -9451,51 +9121,7 @@ function setBtn(sel, disabled, html) {
     if (html !== undefined) el.innerHTML = html;
 }
 
-function niCleanProgressStats() {
-    const total = Array.isArray(S.chunks) && S.chunks.length
-        ? S.chunks.length
-        : (Array.isArray(S.chunkStatus) ? S.chunkStatus.length : 0);
-    let done = 0;
-    let error = 0;
-    let running = 0;
-    let pending = 0;
-    for (let i = 0; i < total; i++) {
-        const st = S.chunkStatus?.[i] || 'pending';
-        if (st === 'done') done++;
-        else if (st === 'error') error++;
-        else if (st === 'running') running++;
-        else pending++;
-    }
-    return {
-        total,
-        done,
-        error,
-        running,
-        pending,
-        hasAnyProgress: done > 0 || error > 0 || running > 0,
-        isPartial: total > 0 && (done > 0 || error > 0 || running > 0) && done < total,
-        isComplete: total > 0 && done === total && error === 0 && running === 0,
-    };
-}
-
-function niHasPartialCleanProgress() {
-    return niCleanProgressStats().isPartial;
-}
-
-function niNormalizeCleanArraysToChunks() {
-    if (!Array.isArray(S.chunks)) S.chunks = [];
-    const total = S.chunks.length;
-    const valid = new Set(['pending', 'done', 'error']);
-    S.chunkStatus = S.chunks.map((_, i) => {
-        const st = S.chunkStatus?.[i] || 'pending';
-        return valid.has(st) ? st : 'pending';
-    });
-    S.chunkResults = S.chunks.map((_, i) => S.chunkResults?.[i] || '');
-    S.chunkMeta = S.chunks.map((_, i) => S.chunkMeta?.[i] || null);
-    return total;
-}
-
-function niSyncCleanProgressHint(stats = niCleanProgressStats()) {
+function niSyncCleanProgressHint(stats = getCleanProgressStats(S)) {
     if (S.cleanRunning) return;
     const titleProg = q('#ni-cp-title-prog');
     const titleBar  = q('#ni-cp-title-bar');
@@ -9530,7 +9156,7 @@ function niSyncCleanButtonState() {
     const btn = q('#ni-btn-clean');
     const resumeBtn = q('#ni-btn-retry');
     if (!btn) return;
-    const stats = niCleanProgressStats();
+    const stats = getCleanProgressStats(S);
     const disabled = !S.fileLoaded || S.cleanRunning || stats.total === 0;
 
     if (stats.isPartial) {
@@ -9556,18 +9182,13 @@ function niSyncCleanButtonState() {
     niSyncCleanProgressHint(stats);
 }
 
-function niResetCleanRuntimeForRestart() {
-    niNormalizeCleanArraysToChunks();
-    S.characters = [];
-    S.plots = { main: [], sub: [], pivot: [] };
-    S.chunkStatus = S.chunks.map(() => 'pending');
-    S.chunkResults = S.chunks.map(() => '');
-    S.chunkMeta = S.chunks.map(() => null);
-    S.cleanDone = false;
-    S.stopClean = false;
-    S.skipCurrentChunk = false;
-    S.vecDone = false;
-    S.stageVecDone = {};
+async function niResetCleanRuntimeForRestart() {
+    normalizeCleanArraysToChunks(S);
+    niResetChunkDerivedState();
+    if (S.novelKey) {
+        try { await dbClearNovel(S.novelKey); }
+        catch (e) { console.warn('[NI] 重新清洗前清理旧向量失败:', e); }
+    }
     renderChunkList();
     renderPlots();
     renderCharacters();
@@ -9576,7 +9197,7 @@ function niResetCleanRuntimeForRestart() {
 }
 
 async function niHandleCleanButtonClick(restartOnPartial = true) {
-    if (niHasPartialCleanProgress() && restartOnPartial) {
+    if (hasPartialCleanProgress(S) && restartOnPartial) {
         await niStartClean({ restart: true });
         return;
     }
@@ -9922,8 +9543,11 @@ async function niSaveNovelSnapshot(name) {
             _stageTitles:   S.stageTitles,
             _novelKey:      newKey,
             _heavyFileKey:   heavyFileKey,
+            _fileFingerprint:S.fileFingerprint,
+            _chunkKbUsed:    S.chunkKbUsed,
             _vecDone:       S.vecDone,
             _stageVecDone:  S.stageVecDone,
+            _stageVecExpected:S.stageVecExpected,
             _cleanDone:     S.cleanDone,
             _stageMap:      S.stageMap,
             _stageMapN:     S.stageMapN,
@@ -9966,8 +9590,11 @@ async function niUpdateNovelSnapshot(idx) {
         _stageTitles:   S.stageTitles,
         _novelKey:      S.novelKey,
         _heavyFileKey:   heavyFileKey,
+        _fileFingerprint:S.fileFingerprint,
+        _chunkKbUsed:    S.chunkKbUsed,
         _vecDone:       S.vecDone,
         _stageVecDone:  S.stageVecDone,
+        _stageVecExpected:S.stageVecExpected,
         _cleanDone:     S.cleanDone,
         _stageMap:      S.stageMap,
         _stageMapN:     S.stageMapN,
@@ -10003,12 +9630,8 @@ async function niLoadNovelSnapshot(idx) {
     if (!confirm(`确认加载「${snap.name}」？当前工作区数据将被覆盖。`)) return;
     const d = snap.data;
 
-    // 先重置工作区重数据
-    S.characters  = [];
-    S.plots       = { main: [], sub: [], pivot: [] };
-    S.chunkResults= [];
-    S.chunkMeta   = [];
-    S.chunkStatus = [];
+    // 先完整重置小说级状态，避免快照缺失字段继承当前工作区。
+    niResetNovelWorkspace();
 
     // 还原轻量字段
     if (d._stageStates)   S.stageStates   = d._stageStates;
@@ -10016,10 +9639,18 @@ async function niLoadNovelSnapshot(idx) {
     if (d._stageTitles)   S.stageTitles   = d._stageTitles;
     if (d._novelKey)      S.novelKey      = d._novelKey;
     S.heavyFileKey = d._heavyFileKey || '';
+    S.fileFingerprint = d._fileFingerprint || '';
+    S.chunkKbUsed = Math.max(0, parseInt(d._chunkKbUsed, 10) || 0);
     if (d._vecDone != null) S.vecDone     = d._vecDone;
     if (d._stageVecDone) {
         S.stageVecDone = {};
         Object.entries(d._stageVecDone).forEach(([k, v]) => { S.stageVecDone[Number(k)] = v; });
+    }
+    if (d._stageVecExpected) {
+        Object.entries(d._stageVecExpected).forEach(([k, v]) => {
+            const count = Math.max(0, parseInt(v, 10) || 0);
+            if (count > 0) S.stageVecExpected[Number(k)] = count;
+        });
     }
     if (d._cleanDone != null) S.cleanDone = d._cleanDone;
     if (d._stageMap)      S.stageMap      = d._stageMap;
@@ -10061,7 +9692,7 @@ async function niLoadNovelSnapshot(idx) {
     }
 
     niSaveSettings();
-    if (S.cleanDone) {
+    if (canUseDerivedModules(S)) {
         if (S.chunkStatus.length) {
             q('#ni-chunk-info') && (q('#ni-chunk-info').style.display = 'block');
             q('#ni-st-chunks') && (q('#ni-st-chunks').textContent = S.chunkStatus.length);
@@ -10103,18 +9734,12 @@ async function niDeleteNovelSnapshot(idx) {
 
     // 2. 如果当前工作区正在使用该快照的 novelKey，同时重置工作区
     if (snapKey && S.novelKey === snapKey) {
-        Object.assign(S, {
-            rawText: '', rawFileSize: 0, chunks: [], chunkStatus: [], chunkResults: [], chunkMeta: [],
-            fileLoaded: false, cleanRunning: false, cleanDone: false,
-            characters: [], plots: { main: [], sub: [], pivot: [] },
-            stageStates: {}, stageSummaries: {}, stageTitles: {}, stageMap: {}, stageMapN: 0,
-            vecDone: false, stageVecDone: {}, novelKey: '', heavyFileKey: '',
-            styleGuide: '', deviationGuide: '', devChangedFacts: '', devCurrentConstraint: '', devPreservedFacts: '', devCoveredFloor: 0, devLastRange: null,
-        });
+        niResetNovelWorkspace();
+        Object.assign(S, { deviationGuide: '', devChangedFacts: '', devCurrentConstraint: '', devPreservedFacts: '', devCoveredFloor: 0, devLastRange: null });
         niSyncDeviationResultUI({ collapsed: true });
         await niSaveDeviationChatState({ saveChat: true });
         ['_characters','_plots','_stageStates','_stageSummaries','_stageTitles',
-         '_chunkResults','_chunkStatus','_novelKey','_vecDone','_stageVecDone',
+         '_chunkResults','_chunkStatus','_novelKey','_fileFingerprint','_chunkKbUsed','_vecDone','_stageVecDone','_stageVecExpected',
          '_cleanDone','_stageMap','_stageMapN','_chunkStageMap','_heavyFileKey',
          '_styleGuide','_deviationGuide','_devCoveredFloor','_devLastRange'].forEach(k => { delete cfg[k]; });
         S.chunkStageMap = null;
@@ -10159,11 +9784,9 @@ async function niExportData() {
 
     // 1. 读取向量数据
     let allChunks = [];
-    let vectorsAvailable = false;
     try {
         if (S.novelKey) {
             allChunks = await dbLoadByNovel();
-            vectorsAvailable = allChunks.length > 0;
         }
     } catch (e) { console.warn('[NI] 读取向量失败，将导出不含向量的版本:', e); }
 
@@ -10182,8 +9805,11 @@ async function niExportData() {
             _chunkStatus:   S.chunkStatus,
             _novelKey:      S.novelKey,
             _heavyFileKey:   S.heavyFileKey,
+            _fileFingerprint:S.fileFingerprint,
+            _chunkKbUsed:    S.chunkKbUsed,
             _vecDone:       S.vecDone,
             _stageVecDone:  S.stageVecDone,
+            _stageVecExpected:S.stageVecExpected,
             _cleanDone:     S.cleanDone,
             _stageMap:      S.stageMap,
             _stageMapN:     S.stageMapN,
@@ -10287,7 +9913,7 @@ async function niImportData(file) {
                 const oldS = { characters: S.characters, plots: S.plots, chunkResults: S.chunkResults, chunkMeta: S.chunkMeta, chunkStatus: S.chunkStatus, styleGuide: S.styleGuide };
                 S.characters   = niStripCharAiRuntime(rt._characters);
                 S.plots        = rt._plots        || { main: [], sub: [], pivot: [] };
-                niNormalizePlotCollections();
+                normalizePlotCollections(S, niSyncSubPlotStageAssignments);
                 S.chunkResults = rt._chunkResults || [];
                 S.chunkMeta    = rt._chunkMeta    || [];
                 S.chunkStatus  = rt._chunkStatus  || [];
@@ -10316,8 +9942,11 @@ async function niImportData(file) {
                         _stageTitles:    rt._stageTitles,
                         _novelKey:       importedKey,
                         _heavyFileKey:    heavyFileKey,
+                        _fileFingerprint:rt._fileFingerprint,
+                        _chunkKbUsed:    rt._chunkKbUsed,
                         _vecDone:        rt._vecDone,
                         _stageVecDone:   rt._stageVecDone,
+                        _stageVecExpected:rt._stageVecExpected,
                         _cleanDone:      rt._cleanDone,
                         _stageMap:       rt._stageMap,
                         _stageMapN:      rt._stageMapN,
@@ -10412,7 +10041,7 @@ async function niImportData(file) {
         const oldS2 = { characters: S.characters, plots: S.plots, chunkResults: S.chunkResults, chunkMeta: S.chunkMeta, chunkStatus: S.chunkStatus, styleGuide: S.styleGuide };
         S.characters   = niStripCharAiRuntime(rt._characters);
         S.plots        = rt._plots        || { main: [], sub: [], pivot: [] };
-        niNormalizePlotCollections();
+        normalizePlotCollections(S, niSyncSubPlotStageAssignments);
         S.chunkResults = rt._chunkResults || [];
         S.chunkMeta    = rt._chunkMeta    || [];
         S.chunkStatus  = rt._chunkStatus  || [];
@@ -10442,8 +10071,11 @@ async function niImportData(file) {
                 _stageTitles:    rt._stageTitles,
                 _novelKey:       importedKey,
                 _heavyFileKey:    heavyFileKey,
+                _fileFingerprint:rt._fileFingerprint,
+                _chunkKbUsed:    rt._chunkKbUsed,
                 _vecDone:        rt._vecDone,
                 _stageVecDone:   rt._stageVecDone,
+                _stageVecExpected:rt._stageVecExpected,
                 _cleanDone:      rt._cleanDone,
                 _stageMap:       rt._stageMap,
                 _stageMapN:      rt._stageMapN,
@@ -10493,14 +10125,8 @@ async function niClearAllData() {
             await dbClearNovel();
             await niServerDeleteHeavy(oldNovelKey, oldHeavyFileKey);
         }
-        Object.assign(S, {
-            rawText: '', rawFileSize: 0, chunks: [], chunkStatus: [], chunkResults: [], chunkMeta: [],
-            fileLoaded: false, cleanRunning: false, cleanDone: false,
-            characters: [], plots: { main: [], sub: [], pivot: [] },
-            stageStates: {}, stageSummaries: {}, stageTitles: {}, stageMap: {}, stageMapN: 0,
-            vecDone: false, stageVecDone: {}, novelKey: '', heavyFileKey: '',
-            styleGuide: '', deviationGuide: '', devChangedFacts: '', devCurrentConstraint: '', devPreservedFacts: '', devCoveredFloor: 0, devLastRange: null,
-        });
+        niResetNovelWorkspace();
+        Object.assign(S, { deviationGuide: '', devChangedFacts: '', devCurrentConstraint: '', devPreservedFacts: '', devCoveredFloor: 0, devLastRange: null });
         niSyncDeviationResultUI({ collapsed: true });
         await niSaveDeviationChatState({ saveChat: true });
         const cfg = extension_settings[EXT_NAME];
@@ -10508,7 +10134,7 @@ async function niClearAllData() {
             cfg.novelLibrary = cfg.novelLibrary.filter(s => s?.data?._novelKey !== oldNovelKey);
         }
         ['_characters','_plots','_stageStates','_stageSummaries','_stageTitles',
-         '_chunkResults','_chunkStatus','_novelKey','_vecDone','_stageVecDone',
+         '_chunkResults','_chunkStatus','_novelKey','_fileFingerprint','_chunkKbUsed','_vecDone','_stageVecDone','_stageVecExpected',
          '_cleanDone','_stageMap','_stageMapN','_chunkStageMap','_heavyFileKey',
          '_styleGuide','_deviationGuide','_devCoveredFloor','_devLastRange'].forEach(k => { delete cfg[k]; });
         S.chunkStageMap = null;
@@ -10681,9 +10307,9 @@ jQuery(async () => {
     });
     $app.on('input', '#ni-chunk-kb', () => niOnKbChange());
     $app.on('input', '#ni-api-timeout', () => niSaveSettings());
-    $app.on('input', '#ni-rate-limit',   () => { niSaveSettings(); _apiQueue.maxPerMin = Math.max(0, parseInt(q('#ni-rate-limit')?.value) || 0); });
+    $app.on('input', '#ni-rate-limit',   () => niSaveSettings());
     $app.on('input', '#ni-api-concurrency', () => niSaveSettings());
-    $app.on('input', '#ni-vec-rate-limit', () => { niSaveSettings(); _vecQueue.maxPerMin = Math.max(0, parseInt(q('#ni-vec-rate-limit')?.value) || 0); });
+    $app.on('input', '#ni-vec-rate-limit', () => niSaveSettings());
     $app.on('input', '#ni-vec-concurrency', () => niSaveSettings());
 
     // 流式开关
@@ -11580,8 +11206,6 @@ jQuery(async () => {
         niStyleSyncMode();
         niSaveSettings();
     });
-    // 注入开关 / 注入设置变更 → 保存
-    $app.on('change', '#ni-style-inj-enabled', () => niSaveSettings());
     // 采样参数变更 → 保存
     $app.on('change', '#ni-style-sample-len, #ni-style-chunk-sel', () => niSaveSettings());
     // 结果手动编辑 → 同步到 S.styleGuide
@@ -11612,7 +11236,7 @@ jQuery(async () => {
     });
 
     // 恢复 UI 状态
-    if (S.cleanDone) {
+    if (canUseDerivedModules(S)) {
         // 恢复文件状态显示
         if (S.chunkStatus.length) {
             q('#ni-chunk-info').style.display = 'block';
@@ -11652,6 +11276,7 @@ let _stageSlots = {};   // { [slotId]: { label, assignedChunks: Set } }
 let _slotCounter = 0;
 
 function niOpenStagePanel() {
+    if (!canUseDerivedModules(S)) { alert('请先完成至少一个分段并停止清洗，再进行阶段划分'); return; }
     const panel = q('#ni-stage-panel');
     if (!panel) return;
     const isOpen = panel.style.display !== 'none';
@@ -11872,6 +11497,7 @@ function niUpdateSpHint() {
 }
 
 async function niAutoStageByPivot() {
+    if (!canUseDerivedModules(S)) { alert('请先完成至少一个分段并停止清洗，再进行阶段划分'); return; }
     const main = S.plots.main || [];
     const pivot = S.plots.pivot || [];
     if (!main.length) { alert('请先完成清洗，生成剧情节点后再划分'); return; }
@@ -11928,116 +11554,24 @@ function niConfirmStageMap() {
     const slots = Object.entries(_stageSlots);
     if (!slots.length) { niCloseStagePanel(); return; }
 
-    // 构建 chunk->stageIdx 映射
-    // newMap 以「main/pivot数组下标」为 key
-    // chunkStageMap 以「真实 _chunkIdx」为 key，值为 Set<stageIdx>
-    const newMap = {};
     const mainArr = S.plots.main || [];
     const pivotArr = S.plots.pivot || [];
-    // chunkStageMap: realChunkIdx -> Set of stageIdx
-    const chunkStageMap = {}; // { [realChunkIdx]: Set<stageIdx> }
-
-    let si = 1;
-    const sortedSlots = slots.sort((a,b) => parseInt(a[0]) - parseInt(b[0]));
-
-    // 第一轮：写入数组下标映射，同时建立 realChunkIdx -> stageIdx 集合
-    sortedSlots.forEach(([, slot]) => {
-        slot.assignedChunks.forEach(ci => {
-            newMap[ci] = si;   // key = main/pivot 数组下标（原有逻辑）
-            // 找到该 ci 对应的真实 chunkIdx
-            const realCi = ci < mainArr.length
-                ? (mainArr[ci]?._chunkIdx ?? ci)
-                : (pivotArr[ci - mainArr.length]?._chunkIdx ?? ci);
-            if (!chunkStageMap[realCi]) chunkStageMap[realCi] = new Set();
-            chunkStageMap[realCi].add(si);
-        });
-        si++;
+    const stageMapping = buildStageMapping({
+        slots,
+        mainPlots: mainArr,
+        pivotPlots: pivotArr,
+        chunkStatus: S.chunkStatus,
+        oldStageMap: S.stageMap,
+        oldChunkStageMap: S.chunkStageMap,
     });
-
-    // 第二轮：检测边界 chunk——同一个 realChunkIdx 被相邻两个阶段共用时，
-    // 将该 chunk 同时写入两个阶段的集合
-    // 额外检测：某阶段首/尾节点的 _chunkIdx 与相邻阶段末/首节点的 _chunkIdx 相同时，补充归属
-    sortedSlots.forEach(([, slot], slotIdx) => {
-        const curSi = slotIdx + 1;
-        const nextSi = slotIdx + 2;
-        if (nextSi > sortedSlots.length) return;
-        const nextSlot = sortedSlots[slotIdx + 1]?.[1];
-        if (!nextSlot) return;
-
-        // 当前阶段最大 realChunkIdx
-        let maxRealCi = -1;
-        slot.assignedChunks.forEach(ci => {
-            const rci = ci < mainArr.length
-                ? (mainArr[ci]?._chunkIdx ?? ci)
-                : (pivotArr[ci - mainArr.length]?._chunkIdx ?? ci);
-            if (rci > maxRealCi) maxRealCi = rci;
-        });
-        // 下一阶段最小 realChunkIdx
-        let minNextRealCi = Infinity;
-        nextSlot.assignedChunks.forEach(ci => {
-            const rci = ci < mainArr.length
-                ? (mainArr[ci]?._chunkIdx ?? ci)
-                : (pivotArr[ci - mainArr.length]?._chunkIdx ?? ci);
-            if (rci < minNextRealCi) minNextRealCi = rci;
-        });
-        // 如果两个阶段最近的 chunk 相邻，则各自获得对方的边界 chunk
-        if (maxRealCi >= 0 && minNextRealCi !== Infinity && minNextRealCi - maxRealCi === 1) {
-            // 边界 chunk：当前阶段末尾 chunk 也归入下一阶段；下一阶段首 chunk 也归入当前阶段
-            if (!chunkStageMap[maxRealCi]) chunkStageMap[maxRealCi] = new Set();
-            chunkStageMap[maxRealCi].add(nextSi);   // 当前阶段末 chunk 给下一阶段
-            if (!chunkStageMap[minNextRealCi]) chunkStageMap[minNextRealCi] = new Set();
-            chunkStageMap[minNextRealCi].add(curSi); // 下一阶段首 chunk 给当前阶段
-        }
-        // 如果两个阶段共享同一个 realChunkIdx，
-        // 该 chunk 已在第一轮被两个阶段各自 add，chunkStageMap 已含两个 stageIdx
-    });
-
-    // 补全 chunkStageMap：没有 main/pivot 节点的 chunk 按「最近邻已知 realChunkIdx」推断阶段
-    // 避免这些 chunk 在向量化时 fallback 到错误阶段
-    const totalChunkN = S.chunkStatus?.length || 0;
-    if (totalChunkN > 0) {
-        // 收集所有已知的 realChunkIdx -> 阶段
-        const knownMap = {};  // realChunkIdx -> stageIdx
-        Object.entries(chunkStageMap).forEach(([rci, stageSet]) => {
-            knownMap[Number(rci)] = Math.min(...stageSet);
-        });
-        const knownIdxs = Object.keys(knownMap).map(Number).sort((a, b) => a - b);
-        if (knownIdxs.length > 0) {
-            for (let i = 0; i < totalChunkN; i++) {
-                if (chunkStageMap[i]) continue; // 已有归属，跳过
-                // 找最近的已知 realChunkIdx，取其阶段
-                let nearest = knownIdxs[0], minDist = Math.abs(i - knownIdxs[0]);
-                for (const k of knownIdxs) {
-                    const d = Math.abs(i - k);
-                    if (d < minDist) { minDist = d; nearest = k; }
-                    else if (d > minDist) break; // 已排序，后面只会更远
-                }
-                chunkStageMap[i] = new Set([knownMap[nearest]]);
-            }
-        }
-    }
+    const { sortedSlots, newMap, chunkStageMap, changedStages } = stageMapping;
 
     // 将 chunkStageMap 挂到 S 上，注入时使用
     S.chunkStageMap = chunkStageMap;
 
-    const oldMap = S.stageMap;
     S.stageMap = newMap;
     S.stageMapN = slots.length;
 
-    // 找出节点归属发生变化的阶段，清空其概括和标题
-    const changedStages = new Set();
-    const allCiKeys = new Set([
-        ...Object.keys(oldMap).map(Number).filter(n => !isNaN(n)),
-        ...Object.keys(newMap).map(Number).filter(n => !isNaN(n)),
-    ]);
-    allCiKeys.forEach(ci => {
-        const oldStage = oldMap[ci] ?? oldMap[String(ci)];
-        const newStage = newMap[ci] ?? newMap[String(ci)];
-        if (oldStage !== newStage) {
-            if (oldStage != null) changedStages.add(oldStage);
-            if (newStage != null) changedStages.add(newStage);
-        }
-    });
     changedStages.forEach(si => {
         delete S.stageSummaries[si];
         delete S.stageTitles[si];
@@ -12071,7 +11605,7 @@ function niConfirmStageMap() {
     niSyncSubPlotStageAssignments();
 
     // 更新阶段标题
-    slots.sort((a,b) => parseInt(a[0]) - parseInt(b[0])).forEach(([, slot], i) => {
+    sortedSlots.forEach(([, slot], i) => {
         S.stageTitles[i+1] = slot.label;
     });
 
@@ -12630,7 +12164,7 @@ function niTbAdvanceFrontier(stageIdx) {
  */
 function niGetTbNodes() {
     const typeLabels = { main: '主线', sub: '支线', pivot: '关键转折' };
-    const allNodes = niGetAllPlotsInStoryOrder().map(p => {
+    const allNodes = getAllPlotsInStoryOrder(S).map(p => {
         const type = p._type || p.type || 'main';
         const legacyId = `${type}_${p._sourceIdx ?? p._originalIdx ?? 0}`;
         const id = niEnsurePlotNodeId(p._plotRef || p, type, p._sourceIdx ?? 0);
@@ -13219,14 +12753,6 @@ function niTbWriteOpeningPrompt() {
         .replace(/{B_TIME}/g,     firstNode.time      || '不限')
         .replace(/{B_LOCATION}/g, firstNode.location  || '不限');
     console.log('[NI-TB] 开场提示词已就绪，等待下次发送生效');
-}
-
-// 在 onPromptReady 中被调用
-function niTbInjectAdvancePromptIfPending(eventData, doInject) {
-    if (!_tbPendingAdvancePrompt) return;
-    const content = _tbPendingAdvancePrompt;
-    _tbPendingAdvancePrompt = '';
-    doInject(`${EXT_NAME}_tb_advance`, content, 1, 1, 0); // 聊天内 depth=1 system
 }
 
 // ── 自由推演 ─────────────────────────────────────────────────
@@ -13903,10 +13429,7 @@ jQuery(document).ready(function () {
                 content = niApplyUserSubstitution(content);
                 if (!content.trim()) return;
                 if (eventData?.chat && Array.isArray(eventData.chat)) {
-                    const msg = { role: 'system', content };
-                    const lastUserIdx = eventData.chat.map(m => m?.role).lastIndexOf('user');
-                    if (lastUserIdx >= 0) eventData.chat.splice(lastUserIdx, 0, msg);
-                    else eventData.chat.push(msg);
+                    niInsertIntoEventChat(eventData.chat, content, 1, 1, 0);
                 } else if (setExtensionPromptFn) {
                     setExtensionPromptFn(slotKey, content, 1, 1, true, 0);
                 }
