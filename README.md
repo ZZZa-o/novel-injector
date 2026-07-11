@@ -507,27 +507,18 @@ novel-injector/
 ├─ style.css
 ├─ README.md
 └─ lib/
-   ├─ cleaning-state-utils.js
-   ├─ clean-response-parser.js
-   ├─ chunk-layout-utils.js
-   ├─ character-data-utils.js
-   ├─ concurrency-utils.js
-   ├─ plot-checkpoint-utils.js
-   ├─ plot-order-utils.js
-   ├─ request-rate-queue.js
-   ├─ stage-map-utils.js
-   ├─ storage-utils.js
-   ├─ pinyin-utils.js
-   ├─ vector-recall-utils.js
-   ├─ vector-state-utils.js
-   ├─ vector-utils.js
-   ├─ zip-utils.js
-   ├─ statusbar-theme.js
-   ├─ theme-editor.js
-   └─ theme-utils.js
+   ├─ api-system.js
+   ├─ cleaning-system.js
+   ├─ prompts.js
+   ├─ storage-system.js
+   ├─ story-data.js
+   ├─ transbook-system.js
+   ├─ ui-system.js
+   ├─ vector-system.js
+   └─ world-system.js
 ```
 
-其中，清洗检查点、清洗响应解析、分段锚点布局、请求限速、动态并发、角色数据合并、剧情节点稳定排序、剧情阶段检查点、阶段映射、向量召回裁切和向量完整性判断均为独立模块；`index.js` 继续负责插件状态、界面事件和各模块编排。后续高耦合功能会继续按“单模块拆分、单模块回归、确认酒馆真实加载后再进入下一个模块”的方式迁移。
+`lib/` 按完整业务域组织，而不是按单个工具函数拆成大量小文件：清洗与文件解析、剧情/角色/阶段数据、向量化与召回、世界设定、穿书状态、API/限速/并发、小说库与导入导出、提示词、主题界面分别集中在对应模块。`index.js` 负责插件状态、酒馆接线和界面事件编排。提示词文本、界面结构、存储格式与原有运行逻辑在本次整理中保持不变。
 
 ## 兼容说明
 
