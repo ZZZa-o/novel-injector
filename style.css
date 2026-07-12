@@ -28,6 +28,17 @@
   --ni-checkbox-on: #fff;
   --ni-checkbox-check-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8.2l2.5 2.5L12 5.3'/%3E%3C/svg%3E");
 }
+
+/* SillyTavern 的移动 UI 会让所有 drawer-content 可缩放。
+   本插件内部使用固定高度布局，外层缩放会把底栏拖离正常位置并留下大片空白。 */
+#ni_drawer_content {
+  resize: none !important;
+}
+
+#ni_drawer_content.openDrawer {
+  height: auto !important;
+}
+
 .ni-app.ni-surface-tavern {
   --ni-surface-bg: transparent;
   --ni-surface-text: var(--SmartThemeBodyColor, #ddd);
