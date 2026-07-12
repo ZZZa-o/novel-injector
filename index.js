@@ -2405,6 +2405,8 @@ const {
     niWorldGenOne,
     niWorldGenAll,
     niWorldAddCat,
+    niWorldDeleteCat,
+    niWorldSavePrompt,
     niGetDeviationChatRoot,
     niReadDeviationChatState,
     niSetDeviationSections,
@@ -2498,6 +2500,7 @@ const {
         callApiSeq,
         alert: message => alert(message),
         prompt: (...args) => prompt(...args),
+        confirm: message => confirm(message),
         logger: console,
         defaultCategories: WORLD_DEFAULT_CATEGORIES,
         extractPrompt: WORLD_EXTRACT_PROMPT,
@@ -2514,6 +2517,8 @@ Object.assign(window, {
     niWorldGenOne,
     niWorldGenAll,
     niWorldAddCat,
+    niWorldDeleteCat,
+    niWorldSavePrompt,
 });
 
 // ============================================================
@@ -3196,8 +3201,15 @@ jQuery(async () => {
     // 世界设定：AI全部生成
     $app.on('click', '#ni-world-gen-all', () => niWorldGenAll());
 
+    // 世界设定：分类生成提示词
+    $app.on('click', '#ni-world-prompt-btn', () => niTogglePanel('ni-world-pb', 'ni-world-prompt-btn'));
+    $app.on('input change', '.ni-world-prompt-textarea', function() {
+        niWorldSavePrompt(this.value);
+    });
+
     // 世界设定：添加大类
     $app.on('click', '.ni-world-add-cat', () => niWorldAddCat());
+    $app.on('click', '.ni-world-remove-btn', () => niWorldDeleteCat());
 
     // 用户代入角色
     $app.on('click', '#ni-user-sub-cfg-btn', () => {
