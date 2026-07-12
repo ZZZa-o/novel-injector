@@ -212,7 +212,7 @@ const DEFAULT_SETTINGS = {
     chunkKb: 100,
     apiTimeoutMin: 15,  // 每段 API 请求超时时间
     apiRateLimit: 3,    // 每分钟最多请求次数
-    apiConcurrency: 1,  // 清洗分段最大并发请求数；0按串行兼容
+    apiConcurrency: 1,  // 清洗、阶段概括和角色 AI 人设共用的最大并发请求数；0按串行兼容
     vecRateLimit: 3,    // 向量化每分钟最多请求次数
     vecConcurrency: 1,  // 1=串行；>1=最大并发请求数；0按串行兼容
     pluginEnabled: true,  // 插件总开关
@@ -352,8 +352,6 @@ function niResetStageVectorState() {
 
 function niRechunkPreservingCompleted(kb) {
     const oldChunkStageMap = S.chunkStageMap;
-    const plotMemory = capturePlotCheckpointMemory(S);
-    const characterMemory = captureCharacterMemory(S);
     const layout = buildRechunkLayout({
         chunks: S.chunks,
         status: S.chunkStatus,
@@ -373,20 +371,35 @@ function niRechunkPreservingCompleted(kb) {
     S.stopClean = false;
     S.skipCurrentChunk = false;
 
-    const remappedPlotMemory = new Map(plotMemory);
     ['main', 'sub', 'pivot'].forEach(type => {
         (S.plots[type] || []).forEach((plot, index) => {
             const oldChunkIdx = niPlotChunkIdx(plot, -1);
             if (!oldToNewChunkIdx.has(oldChunkIdx)) return;
             const oldId = niEnsurePlotNodeId(plot, type, index);
-            const saved = plotMemory.get(oldId);
-            if (!saved) return;
             const newChunkIdx = oldToNewChunkIdx.get(oldChunkIdx);
-            const order = niPlotChunkOrder(plot, index);
-            const newId = `${type}:${newChunkIdx}:${order}:${niHashShort(`${plot.title || ''}\n${plot.body || ''}`)}`;
-            remappedPlotMemory.set(newId, saved);
+            const idParts = String(oldId).split(':');
+            if (idParts.length >= 4 && Number(idParts[1]) === oldChunkIdx) {
+                idParts[1] = String(newChunkIdx);
+                plot._nodeId = idParts.join(':');
+            }
+            plot._chunkIdx = newChunkIdx;
         });
     });
+    (S.characters || []).forEach(character => {
+        const oldChunkIdx = Number(character?._firstChunkIdx);
+        if (Number.isFinite(oldChunkIdx) && oldToNewChunkIdx.has(oldChunkIdx)) {
+            character._firstChunkIdx = oldToNewChunkIdx.get(oldChunkIdx);
+            delete character._characterId;
+        }
+        (character?.aliases || []).forEach(alias => {
+            const aliasChunkIdx = Number(alias?._chunkIdx);
+            if (Number.isFinite(aliasChunkIdx) && oldToNewChunkIdx.has(aliasChunkIdx)) {
+                alias._chunkIdx = oldToNewChunkIdx.get(aliasChunkIdx);
+            }
+        });
+    });
+    const remappedPlotMemory = capturePlotCheckpointMemory(S);
+    const remappedCharacterMemory = captureCharacterMemory(S);
 
     const remappedChunkStageMap = {};
     if (oldChunkStageMap) {
@@ -398,7 +411,7 @@ function niRechunkPreservingCompleted(kb) {
         });
     }
     S.chunkStageMap = Object.keys(remappedChunkStageMap).length ? remappedChunkStageMap : null;
-    niRebuildStructuredDataFromChunks(remappedPlotMemory, characterMemory);
+    niRebuildStructuredDataFromChunks(remappedPlotMemory, remappedCharacterMemory);
     return {
         preserved,
         pending,
@@ -2338,7 +2351,7 @@ const _vecQueue = new PersistedRateQueue({
 // ============================================================
 // 自动生成阶段标题和概括
 // ============================================================
-// 角色/阶段概括专用：强制串行，不受 apiConcurrency 影响
+// 角色/阶段概括与清洗共用每分钟限速；实际并发由 apiConcurrency 和 ApiSemaphore 共同限制
 async function niAcquireApiRateSlot(signal = null) {
     if (!signal) {
         await _apiQueue.acquire();
@@ -4571,6 +4584,12 @@ console.log('[NI-TB] 穿书模式模块已加载');
         q('ni-popup-overlay')?.addEventListener('click', niPopClose);
 
         q('ni-pop-stage-row')?.addEventListener('click', () => {
+            // 弹窗可能持续打开；展开阶段选择前重新读取主模块的最新状态。
+            const latest = niPopGetState();
+            if (Number.isInteger(latest.curIdx) && latest.curIdx >= 0 && latest.curIdx < latest.nodes.length) {
+                _popCurIdx = latest.curIdx;
+            }
+            niPopRender();
             _popStageOpen = !_popStageOpen;
             q('ni-pop-stage-drop')?.classList.toggle('vis', _popStageOpen);
             const arrow = q('ni-pop-stage-arrow')?.querySelector('span');

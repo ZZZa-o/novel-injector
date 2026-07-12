@@ -59,12 +59,12 @@
           <div class="ni-stream-timeout-row">
             <label class="ni-timeout-label" title="每分钟最多发送的 API 请求次数，超出后自动排队等待">
               <i class="ti ti-traffic-lights"></i>每分钟限
-              <input type="text" id="ni-rate-limit" class="ni-kb-inp" value="3" style="width:10px" inputmode="numeric" pattern="[0-9]*">
+              <input type="text" id="ni-rate-limit" class="ni-kb-inp" value="3" style="width:14px" inputmode="numeric" pattern="[0-9]*">
               <span>次请求</span>
             </label>
-            <label class="ni-timeout-label" title="同时发送的清洗 API 请求数；1 表示串行，0 也按串行处理">
+            <label class="ni-timeout-label" title="清洗、阶段概括和角色 AI 人设共用的最大并发请求数；1 表示串行，0 也按串行处理">
               <i class="ti ti-arrows-split"></i>并发
-              <input type="text" id="ni-api-concurrency" class="ni-kb-inp" value="1" style="width:10px" inputmode="numeric" pattern="[0-9]*">
+              <input type="text" id="ni-api-concurrency" class="ni-kb-inp" value="1" style="width:14px" inputmode="numeric" pattern="[0-9]*">
             </label>
             <label class="ni-timeout-label" title="单段请求无响应超过设定时间后自动中止，最多重试3次">
               <i class="ti ti-clock-bolt"></i>无响应超过
@@ -225,12 +225,12 @@
           <div class="ni-stream-timeout-row">
             <label class="ni-timeout-label" title="向量化每分钟最多发送的 API 请求次数，超出后自动排队等待">
               <i class="ti ti-traffic-lights"></i>每分钟限
-              <input type="text" id="ni-vec-rate-limit" class="ni-kb-inp" value="3" style="width:10px" inputmode="numeric" pattern="[0-9]*">
+              <input type="text" id="ni-vec-rate-limit" class="ni-kb-inp" value="3" style="width:14px" inputmode="numeric" pattern="[0-9]*">
               <span>次请求</span>
             </label>
             <label class="ni-timeout-label" title="同时发送的向量 API 请求数；1 表示串行，0 也按串行处理">
               <i class="ti ti-arrows-split"></i>并发
-              <input type="text" id="ni-vec-concurrency" class="ni-kb-inp" value="1" style="width:10px" inputmode="numeric" pattern="[0-9]*">
+              <input type="text" id="ni-vec-concurrency" class="ni-kb-inp" value="1" style="width:14px" inputmode="numeric" pattern="[0-9]*">
             </label>
           </div>
           <div class="ni-field">
