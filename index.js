@@ -4288,10 +4288,14 @@ console.log('[NI-TB] 穿书模式模块已加载');
                 '</span>' +
                 '<span class="ni-nr-status"><span class="ni-nr-chk' + (isDone ? ' checked' : '') + '" id="ni-pop-chk'+gi+'">' + (isDone ? '✔' : '') + '</span></span>';
 
-            row.title = isDone ? '点击取消归纳' : '点击归纳此节点';
+            row.title = isActive ? '点击右侧勾选切换归档状态' : '点击切换到此节点';
             row.addEventListener('click', function(e) {
                 e.preventDefault();
                 if (n.locked) return;
+                if (!e.target.closest('.ni-nr-chk')) {
+                    niPopSetActive(gi);
+                    return;
+                }
                 const chkEl = q('ni-pop-chk' + gi);
                 if (typeof window.niTbToggleCheck === 'function') {
                     window.niTbToggleCheck(gi).then(() => {
@@ -4429,27 +4433,13 @@ console.log('[NI-TB] 穿书模式模块已加载');
                        + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
     }
 
-    // ── 仅更新高亮和滚动，不重建列表──
+    // ── 更新当前节点、自动归档状态和滚动位置 ──
     function niPopSetActive(newIdx) {
-        const { nodes, stages } = niPopGetState();
+        const { nodes } = niPopGetState();
         if (newIdx < 0 || newIdx >= nodes.length) return;
-        const view = niPopGetStageView(nodes, newIdx);
-        // 取消旧高亮
-        const oldRow   = q('ni-pop-nr' + _popCurIdx);
-        const oldGroup = oldRow?.parentElement;
-        if (oldRow)   { oldRow.classList.remove('is-active'); }
-        if (oldGroup) { oldGroup.classList.remove('is-active-g'); }
-        const oldDesc = oldGroup?.querySelector('.ni-node-desc');
-        if (oldDesc)  { oldDesc.classList.remove('vis'); }
-        // 应用新高亮
         if (typeof window.niTbSetCurrentIdx === 'function') window.niTbSetCurrentIdx(newIdx, nodes, { persist: true });
         _popCurIdx = newIdx;
-        const newRow   = q('ni-pop-nr' + newIdx);
-        const newGroup = newRow?.parentElement;
-        if (newRow)   { newRow.classList.add('is-active'); }
-        if (newGroup) { newGroup.classList.add('is-active-g'); }
-        const newDesc = newGroup?.querySelector('.ni-node-desc');
-        if (newDesc)  { newDesc.classList.add('vis'); }
+        niPopRender();
         // 滚动到新节点
         requestAnimationFrame(() => {
             const r = q('ni-pop-nr' + newIdx);
@@ -4457,9 +4447,6 @@ console.log('[NI-TB] 穿书模式模块已加载');
             const g = r.parentElement, l = q('ni-pop-node-list');
             if (l) l.scrollTop += (g.getBoundingClientRect().top - l.getBoundingClientRect().top) - (l.clientHeight/2) + (g.offsetHeight/2);
         });
-        // 更新进度条和按钮状态
-        niPopSyncNav(view.nodes, newIdx);
-        niPopSyncSub(nodes, stages, newIdx);
     }
 
     // ── 主渲染 ──
