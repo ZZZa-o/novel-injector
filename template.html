@@ -1317,8 +1317,12 @@
 .ni-pop-stage-row:hover{background:#fff5fa}
 .ni-stage-lbl{font-size:9px;color:#d080a0;flex-shrink:0}
 .ni-stage-val{font-size:10px;color:#6a2038;font-weight:500;flex:1}
-.ni-stage-drop{display:none;background:#fffafc;border-bottom:1.5px dashed #f5c6d8;padding:4px 0}
+.ni-stage-drop{display:none;background:#fffafc;border-bottom:1.5px dashed #f5c6d8;padding:4px 0;max-height:126px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#dbeeff #fff8fc;box-sizing:border-box}
 .ni-stage-drop.vis{display:block}
+.ni-stage-drop::-webkit-scrollbar{width:6px}
+.ni-stage-drop::-webkit-scrollbar-track{background:#fff8fc;border-left:1px dashed rgba(245,210,222,.5)}
+.ni-stage-drop::-webkit-scrollbar-thumb{background:linear-gradient(to bottom,#f8dbe6,#dbeeff);border-radius:6px;border:1px solid #fff8fc}
+.ni-stage-drop::-webkit-scrollbar-thumb:hover{background:linear-gradient(to bottom,#f2c7d8,#cfe2ff)}
 .ni-stage-opt{padding:6px 28px;font-size:10px;color:#8b4a5a;cursor:pointer;transition:background .12s;display:flex;align-items:center;gap:7px}
 .ni-stage-opt:hover{background:#fdeef4}
 .ni-stage-opt.active{color:#c05a72;font-weight:500}
