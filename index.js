@@ -3180,10 +3180,26 @@ jQuery(async () => {
                     msg += '   请检查 API 配置后重新向量化。\n';
                 }
             }
-            alert(msg);
+            const modal = q('#ni-vec-debug-modal');
+            const content = q('#ni-vec-debug-content');
+            if (modal && content) {
+                content.textContent = msg;
+                content.scrollTop = 0;
+                modal.style.display = 'flex';
+            } else {
+                alert(msg);
+            }
         } catch(e) {
             alert('诊断失败: ' + e.message);
         }
+    });
+
+    $app.on('click', '#ni-vec-debug-close', () => {
+        const modal = q('#ni-vec-debug-modal');
+        if (modal) modal.style.display = 'none';
+    });
+    $app.on('click', '#ni-vec-debug-modal', function(e) {
+        if (e.target === this) this.style.display = 'none';
     });
 
     $app.on('input', '#ni-vec-key, #ni-vec-url, #ni-vec-model', () => niSaveSettings());

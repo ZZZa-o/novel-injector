@@ -1279,6 +1279,17 @@
 
   </div>
 
+  <!-- 向量诊断弹窗：替代移动端会截断长文本的原生 alert -->
+  <div class="ni-modal-bg" id="ni-vec-debug-modal" style="display:none">
+    <div class="ni-modal ni-vec-debug-modal-card" role="dialog" aria-modal="true" aria-labelledby="ni-vec-debug-title">
+      <div class="ni-modal-title" id="ni-vec-debug-title">向量数据诊断</div>
+      <pre class="ni-vec-debug-content" id="ni-vec-debug-content"></pre>
+      <div class="ni-modal-btns">
+        <button class="ni-modal-confirm" id="ni-vec-debug-close">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Bottom Nav-->
   <div class="ni-btm-nav">
     <button class="ni-nav-btn on" data-page="process"><i class="ti ti-tool"></i>处理</button>
