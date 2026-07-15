@@ -26,6 +26,7 @@ import {
 } from '/scripts/openai.js';
 
 import { createStorageController, niEscAttr, niEscHtml } from './lib/storage-system.js';
+import { createAutosaveController } from './lib/autosave-system.js';
 
 import {
     bytesToVecs,
@@ -216,6 +217,7 @@ const DEFAULT_SETTINGS = {
     vecRateLimit: 3,    // 向量化每分钟最多请求次数
     vecConcurrency: 1,  // 1=串行；>1=最大并发请求数；0按串行兼容
     pluginEnabled: true,  // 插件总开关
+    autoSaveEnabled: false, // 默认关闭，需用户手动开启
     topbarIconVisible: true, // 酒馆顶部栏图标显示开关
     themePreset: 'default',
     themePrimary: NI_THEME_DEFAULT.primary,
@@ -316,6 +318,8 @@ const S = {
 
     // 注入
 };
+
+let niAutosave = null;
 
 async function niFingerprintArrayBuffer(buffer) {
     const bytes = buffer instanceof ArrayBuffer
@@ -684,8 +688,10 @@ function niSaveSettings() {
     cfg.userSubMode = niNormalizeUserSubMode(q('#ni-user-sub-mode .ni-user-sub-mode-btn.on')?.dataset.userSubMode ?? cfg.userSubMode);
     cfg.userSubCharIdx = q('#ni-user-sub-char')?.value ?? (cfg.userSubCharIdx ?? DEFAULT_SETTINGS.userSubCharIdx);
     if (q('#ni-user-sub-list .ni-user-sub-row')) cfg.userSubAliases = niReadUserSubAliasesFromUI();
+    cfg.autoSaveEnabled = q('#ni-autosave-chk')?.checked ?? (cfg.autoSaveEnabled ?? DEFAULT_SETTINGS.autoSaveEnabled);
 
     saveSettingsDebounced();
+    niAutosave?.schedule();
 }
 
 function syncSettingsToUI() {
@@ -1384,6 +1390,15 @@ const {
     toastr: globalThis.toastr,
 });
 
+niAutosave = createAutosaveController({
+    state: S,
+    getSettings: () => extension_settings[EXT_NAME] || {},
+    saveSettingsDebounced,
+    saveNovelSnapshot: (...args) => niSaveNovelSnapshot(...args),
+    updateNovelSnapshot: (...args) => niUpdateNovelSnapshot(...args),
+    renderNovelLibrary: () => niRenderNovelLibrary(),
+});
+
 const {
     niOnDrop,
     niOnFile,
@@ -1442,6 +1457,10 @@ const {
     renderCharacters,
     buildStages,
     clearNovelVectors: dbClearNovel,
+    onNovelFileLoaded: fileName => {
+        niAutosave.setSourceFileName(fileName);
+        niAutosave.schedule({ immediate: true });
+    },
 });
 
 Object.assign(window, {
@@ -2846,6 +2865,8 @@ function niSyncPluginToggleUI() {
     if (stateLabel) stateLabel.textContent = enabled ? '开' : '关';
     if (hint) hint.style.display = enabled ? 'none' : 'inline-flex';
     if (row) row.classList.toggle('ni-switch-off', !enabled);
+    const autoSaveChk = q('#ni-autosave-chk');
+    if (autoSaveChk) autoSaveChk.checked = cfg.autoSaveEnabled === true;
 }
 
 function niSyncTransBookToggleUI() {
@@ -3786,6 +3807,9 @@ jQuery(async () => {
     // 设置 Tab 事件绑定
     // 插件总开关
     $app.on('change', '#ni-plugin-chk', () => niTogglePlugin());
+    $app.on('change', '#ni-autosave-chk', function() {
+        niAutosave.setEnabled(this.checked);
+    });
 
     // 外观配色
     $app.on('click', '#ni-theme-toggle-head', () => niThemeEditor.togglePanel());
