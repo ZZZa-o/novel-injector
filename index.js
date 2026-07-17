@@ -7,14 +7,17 @@ import {
     renderExtensionTemplateAsync,
     getContext,
     extension_settings,
+    saveMetadataDebounced,
 } from '/scripts/extensions.js';
 
 import {
     saveSettingsDebounced,
     cleanUpMessage,
+    chat_metadata,
     eventSource,
     event_types,
     extractMessageFromData,
+    getCurrentChatId,
     getRequestHeaders,
     messageFormatting,
     name1,
@@ -152,9 +155,15 @@ import {
 // 常量
 // ============================================================
 const EXT_NAME = 'novel-injector';
+const NI_USER_SUB_CHAT_META_KEY = 'novelInjectorUserSub';
+const NI_USER_SUB_CHAT_MIGRATION_KEY = '_userSubChatConfigMigrationV1';
 const NI_UPLOAD_ACCEPT = '.txt,.mobi';
 const NI_UPLOAD_LABEL = '点击上传 .txt / .mobi 文件';
 const NI_UPLOAD_HINT = '支持 .txt / .mobi，将按设定大小自动分段';
+
+function niNormalizeRawInjMode(mode) {
+    return mode === 'compressed' ? 'compressed' : DEFAULT_SETTINGS.rawInjMode;
+}
 // 通过 Error stack trace 获取当前模块的实际路径
 function _detectExtFolder() {
     try {
@@ -624,7 +633,7 @@ function niSaveSettings() {
     cfg.devAutoUpdateEnabled = q('#ni-dev-auto-enabled')?.checked ?? (cfg.devAutoUpdateEnabled ?? DEFAULT_SETTINGS.devAutoUpdateEnabled);
     cfg.devAutoUpdateEvery = niCfgBoundInt('#ni-dev-auto-every', DEFAULT_SETTINGS.devAutoUpdateEvery, 1, 9999);
     cfg.devManualMsgCount = niCfgBoundInt('#ni-dev-manual-msg-count', DEFAULT_SETTINGS.devManualMsgCount, 1, 200);
-    cfg.rawInjMode  = q('#ni-raw-inj-mode')?.value ?? DEFAULT_SETTINGS.rawInjMode;
+    cfg.rawInjMode  = niNormalizeRawInjMode(q('#ni-raw-inj-mode')?.value ?? cfg.rawInjMode);
     cfg.chunkKb     = parseInt(q('#ni-chunk-kb')?.value) || DEFAULT_SETTINGS.chunkKb;
     cfg.customPrompt    = q('#ni-pt-content')?.value || CLEAN_PROMPT;
     cfg.roleplayPrompt  = q('#ni-stage-pt-content')?.value || extension_settings[EXT_NAME]?.roleplayPrompt || ROLEPLAY_PROMPT;
@@ -686,10 +695,6 @@ function niSaveSettings() {
     cfg.styleSampleLen= parseInt(q('#ni-style-sample-len')?.value) || DEFAULT_SETTINGS.styleSampleLen;
     cfg.styleChunkIdx = parseInt(q('#ni-style-chunk-sel')?.value)  || 0;
     cfg.styleMode     = q('#ni-style-mode')?.value                 ?? DEFAULT_SETTINGS.styleMode;
-    cfg.userSubEnabled = q('#ni-user-sub-chk')?.checked ?? (cfg.userSubEnabled ?? DEFAULT_SETTINGS.userSubEnabled);
-    cfg.userSubMode = niNormalizeUserSubMode(q('#ni-user-sub-mode .ni-user-sub-mode-btn.on')?.dataset.userSubMode ?? cfg.userSubMode);
-    cfg.userSubCharIdx = q('#ni-user-sub-char')?.value ?? (cfg.userSubCharIdx ?? DEFAULT_SETTINGS.userSubCharIdx);
-    if (q('#ni-user-sub-list .ni-user-sub-row')) cfg.userSubAliases = niReadUserSubAliasesFromUI();
     cfg.autoSaveEnabled = q('#ni-autosave-chk')?.checked ?? (cfg.autoSaveEnabled ?? DEFAULT_SETTINGS.autoSaveEnabled);
 
     saveSettingsDebounced();
@@ -1659,15 +1664,86 @@ function mergePlots(incoming, chunkIndex) {
 // ============================================================
 // 剧情渲染
 // ============================================================
+function niNormalizeUserSubMode(mode) {
+    return mode === 'play' ? 'play' : DEFAULT_SETTINGS.userSubMode;
+}
+
+function niCloneUserSubAliases(aliases) {
+    return Array.isArray(aliases)
+        ? aliases.filter(alias => alias && typeof alias === 'object').map(alias => ({ ...alias }))
+        : [];
+}
+
+function niCreateUserSubConfig(source = null, legacyAliasStates = null) {
+    const src = source && typeof source === 'object' ? source : {};
+    const sourceStates = src.aliasStates && typeof src.aliasStates === 'object'
+        ? src.aliasStates
+        : legacyAliasStates;
+    return {
+        version: 1,
+        userSubEnabled: !!(src.userSubEnabled ?? DEFAULT_SETTINGS.userSubEnabled),
+        userSubMode: niNormalizeUserSubMode(src.userSubMode),
+        userSubCharIdx: src.userSubCharIdx == null ? DEFAULT_SETTINGS.userSubCharIdx : String(src.userSubCharIdx),
+        userSubAliases: niCloneUserSubAliases(src.userSubAliases),
+        aliasStates: sourceStates && typeof sourceStates === 'object' ? { ...sourceStates } : {},
+    };
+}
+
+function niGetLegacyUserSubChatStates() {
+    try {
+        const states = getContext()?.chat?.[0]?.ni_user_sub?.aliasStates;
+        return states && typeof states === 'object' ? states : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+let _niDetachedUserSubConfig = null;
+
 function niGetUserSubConfig() {
-    const cfg = extension_settings[EXT_NAME] || {};
-    cfg.userSubMode = niNormalizeUserSubMode(cfg.userSubMode);
-    if (!Array.isArray(cfg.userSubAliases)) cfg.userSubAliases = [];
+    const hasChat = !!getCurrentChatId?.();
+    if (!hasChat || !chat_metadata || typeof chat_metadata !== 'object') {
+        _niDetachedUserSubConfig = _niDetachedUserSubConfig || niCreateUserSubConfig();
+        return _niDetachedUserSubConfig;
+    }
+
+    const globalCfg = extension_settings[EXT_NAME] || {};
+    let cfg = chat_metadata[NI_USER_SUB_CHAT_META_KEY];
+    if (!cfg || typeof cfg !== 'object') {
+        const shouldMigrateGlobal = globalCfg[NI_USER_SUB_CHAT_MIGRATION_KEY] !== true;
+        cfg = niCreateUserSubConfig(
+            shouldMigrateGlobal ? globalCfg : null,
+            niGetLegacyUserSubChatStates(),
+        );
+        chat_metadata[NI_USER_SUB_CHAT_META_KEY] = cfg;
+        saveMetadataDebounced();
+    } else {
+        const normalized = niCreateUserSubConfig(cfg, niGetLegacyUserSubChatStates());
+        Object.keys(cfg).forEach(key => delete cfg[key]);
+        Object.assign(cfg, normalized);
+    }
+
+    if (globalCfg[NI_USER_SUB_CHAT_MIGRATION_KEY] !== true) {
+        globalCfg[NI_USER_SUB_CHAT_MIGRATION_KEY] = true;
+        saveSettingsDebounced();
+    }
     return cfg;
 }
 
-function niNormalizeUserSubMode(mode) {
-    return mode === 'play' ? 'play' : DEFAULT_SETTINGS.userSubMode;
+async function niPersistUserSubConfig({ immediate = false } = {}) {
+    if (!getCurrentChatId?.()) return;
+    try {
+        if (immediate) {
+            const ctx = getContext();
+            if (typeof ctx?.saveMetadata === 'function') {
+                await ctx.saveMetadata();
+                return;
+            }
+        }
+        saveMetadataDebounced();
+    } catch (e) {
+        console.warn('[NI] 用户代入聊天配置保存失败:', e);
+    }
 }
 
 function niIsUserSubPlayMode(cfg = niGetUserSubConfig()) {
@@ -1768,7 +1844,7 @@ function niNormalizeUserSubAliasesForSelectedChar(cfg) {
     });
 
     if (statesChanged) niSaveUserSubChatStates(states).catch(e => console.warn('[NI] 用户代入称呼阶段迁移失败:', e));
-    if (changed) saveSettingsDebounced();
+    if (changed) niPersistUserSubConfig();
     return changed;
 }
 
@@ -1786,22 +1862,14 @@ function niUserSubAliasKey(alias) {
 }
 
 function niGetUserSubChatStates() {
-    try {
-        const ctx = getContext();
-        const states = ctx?.chat?.[0]?.ni_user_sub?.aliasStates;
-        return states && typeof states === 'object' ? states : {};
-    } catch (_) {
-        return {};
-    }
+    const states = niGetUserSubConfig()?.aliasStates;
+    return states && typeof states === 'object' ? states : {};
 }
 
 async function niSaveUserSubChatStates(states) {
     try {
-        const ctx = getContext();
-        if (!ctx?.chat?.[0]) return;
-        ctx.chat[0].ni_user_sub = ctx.chat[0].ni_user_sub || {};
-        ctx.chat[0].ni_user_sub.aliasStates = { ...states };
-        if (typeof ctx.saveChat === 'function') await ctx.saveChat();
+        niGetUserSubConfig().aliasStates = { ...states };
+        await niPersistUserSubConfig({ immediate: true });
     } catch (e) {
         console.warn('[NI] 用户代入称呼状态保存失败:', e);
     }
@@ -1937,14 +2005,22 @@ async function niSaveUserSubFromUI({ rerender = false } = {}) {
     const cfg = niGetUserSubConfig();
     const chk = q('#ni-user-sub-chk');
     const sel = q('#ni-user-sub-char');
+    const aliasRows = qa('#ni-user-sub-list .ni-user-sub-row');
+    const hasLoadedCharacterOptions = !!sel && (S.characters?.length || 0) > 0 && sel.options.length > 1;
     if (chk) cfg.userSubEnabled = chk.checked;
     cfg.userSubMode = niNormalizeUserSubMode(q('#ni-user-sub-mode .ni-user-sub-mode-btn.on')?.dataset.userSubMode ?? cfg.userSubMode);
-    if (sel) cfg.userSubCharIdx = sel.value;
-    if (q('#ni-user-sub-list')) cfg.userSubAliases = niReadUserSubAliasesFromUI();
-    saveSettingsDebounced();
+    // 小说重数据尚未载入时，角色下拉只有占位项。此时切换总开关不能把聊天里已保存的角色和称呼清空。
+    if (hasLoadedCharacterOptions) cfg.userSubCharIdx = sel.value;
+    if (hasLoadedCharacterOptions || aliasRows.length > 0) cfg.userSubAliases = niReadUserSubAliasesFromUI();
+    await niPersistUserSubConfig();
+    niRefreshUserSubDependents({ rerenderUserSub: rerender });
+}
+
+function niRefreshUserSubDependents({ rerenderUserSub = false } = {}) {
+    if (rerenderUserSub) niRenderUserSubUI();
+    else niSyncUserSubPromptPreview();
     niSyncRoleplayToDepth();
-    niSyncUserSubPromptPreview();
-    if (rerender) niRenderUserSubUI();
+    renderCharacters();
 }
 
 function niEscapeRegExp(s) {
@@ -2003,11 +2079,6 @@ function niGetUserSubTitleNames() {
         seen.add(n);
         titles.push(n);
     };
-    const selectedIdx = parseInt(cfg.userSubCharIdx, 10);
-    const selectedChar = S.characters?.[selectedIdx];
-    (Array.isArray(selectedChar?.aliases) ? selectedChar.aliases : [])
-        .filter(niUserSubAliasIsTitle)
-        .forEach(alias => add(niUserSubAliasText(alias)));
     (cfg.userSubAliases || [])
         .filter(niUserSubAliasIsActive)
         .filter(niUserSubAliasIsTitle)
@@ -2034,13 +2105,6 @@ function niGetUserSubstitutionNames() {
     };
     const primaryName = niGetSelectedUserSubCharName();
     addWithShortNames(primaryName);
-    const selectedIdx = parseInt(cfg.userSubCharIdx, 10);
-    const selectedChar = S.characters?.[selectedIdx];
-    (Array.isArray(selectedChar?.aliases) ? selectedChar.aliases : []).forEach(alias => {
-        if (niUserSubAliasIsTitle(alias)) return;
-        const text = niUserSubAliasText(alias);
-        if (text.length >= 2) addWithShortNames(text);
-    });
     niGetActiveUserSubIdentityNames().forEach(addWithShortNames);
     return names.sort((a, b) => b.length - a.length);
 }
@@ -2084,7 +2148,7 @@ function niIsLegacyDefaultUserSubPrompt(state, text) {
     return /^\[用户代入角色\]\n<user>代表原著角色「[^」]+」。以下称呼只作为同一角色的映射：[\s\S]*。后续正文使用<user>，不要把原名或称呼写成另一个角色。\n\[\/用户代入角色\]$/.test(t);
 }
 
-function niGetUserSubCustomPrompt(state = niGetUserSubPromptState(), cfg = niGetUserSubConfig()) {
+function niGetUserSubCustomPrompt(state = niGetUserSubPromptState(), cfg = extension_settings[EXT_NAME] || {}) {
     const field = niGetUserSubPromptField(state);
     if (typeof cfg[field] !== 'string') return null;
     if (niIsLegacyDefaultUserSubPrompt(state, cfg[field])) return null;
@@ -2094,8 +2158,8 @@ function niGetUserSubCustomPrompt(state = niGetUserSubPromptState(), cfg = niGet
 function niSaveUserSubPromptFromUI() {
     const ta = q('#ni-user-sub-prompt-preview');
     if (!ta) return;
-    const cfg = niGetUserSubConfig();
-    cfg[niGetUserSubPromptField(niGetUserSubPromptState(cfg))] = ta.value ?? '';
+    const cfg = extension_settings[EXT_NAME] || {};
+    cfg[niGetUserSubPromptField(niGetUserSubPromptState())] = ta.value ?? '';
     saveSettingsDebounced();
 }
 
@@ -2148,7 +2212,7 @@ function niBuildUserSubRuntimeGuard() {
 function niBuildUserSubIdentityPrompt() {
     const cfg = niGetUserSubConfig();
     if (!cfg.userSubEnabled) return '';
-    const customPrompt = niGetUserSubCustomPrompt(niGetUserSubPromptState(cfg), cfg);
+    const customPrompt = niGetUserSubCustomPrompt(niGetUserSubPromptState(cfg));
     if (customPrompt !== null) {
         const guard = niBuildUserSubRuntimeGuard();
         return guard ? `${customPrompt.trim()}\n\n${guard}` : customPrompt;
@@ -2165,7 +2229,7 @@ function niGetUserSubPromptPreview() {
         };
     }
     const state = niGetUserSubPromptState(cfg);
-    const customPrompt = niGetUserSubCustomPrompt(state, cfg);
+    const customPrompt = niGetUserSubCustomPrompt(state);
     if (customPrompt !== null) {
         return {
             state: niIsUserSubPlayMode(cfg) ? '扮演模式' : '替换模式',
@@ -2197,7 +2261,7 @@ function niSyncUserSubPromptPreview() {
 function niBuildUserRoleBoundaryPrompt() {
     const cfg = niGetUserSubConfig();
     if (cfg.userSubEnabled) return '';
-    const customPrompt = niGetUserSubCustomPrompt('boundary', cfg);
+    const customPrompt = niGetUserSubCustomPrompt('boundary');
     return customPrompt !== null ? customPrompt : USER_SUB_BOUNDARY_PROMPT;
 }
 
@@ -2662,7 +2726,7 @@ async function onPromptReady(eventData) {
 
     // ② 阶段剧情注入
     if (rawStages.length) {
-        const rawMode = cfg.rawInjMode ?? DEFAULT_SETTINGS.rawInjMode;
+        const rawMode = niNormalizeRawInjMode(cfg.rawInjMode);
         const plotLines = [];
         if (rawMode === 'compressed') {
             await niEnsureChunksLoaded();
@@ -3226,7 +3290,12 @@ jQuery(async () => {
         if (body) body.style.display = body.style.display === 'none' ? '' : 'none';
     });
     $app.on('input change', '#ni-inj-depth, #ni-recall-topk, #ni-recall-thresh, #ni-vec-msg-tag, #ni-vec-msg-count, #ni-vec-inj-pos, #ni-vec-inj-role, #ni-char-inj-pos, #ni-char-inj-depth, #ni-char-inj-role, #ni-plot-inj-pos, #ni-plot-inj-depth, #ni-plot-inj-role, #ni-dev-inj-pos, #ni-dev-inj-depth, #ni-dev-inj-role, #ni-global-head-inj-pos, #ni-global-head-inj-depth, #ni-global-head-inj-role, #ni-global-tail-inj-pos, #ni-global-tail-inj-depth, #ni-global-tail-inj-role', () => niSaveSettings());
-    $app.on('change', '#ni-raw-inj-mode', async () => { niSaveSettings(); await niBuildStagesWithChunksIfNeeded(); }); // 切换注入模式时刷新 token 估算
+    $app.on('input change', '#ni-raw-inj-mode', async function() {
+        const cfg = extension_settings[EXT_NAME] || {};
+        cfg.rawInjMode = niNormalizeRawInjMode(this.value);
+        saveSettingsDebounced();
+        await niBuildStagesWithChunksIfNeeded();
+    }); // 直接采用本次选择，切换后立即刷新 token 估算与注入模式
 
     // 注入设置手风琴切换
     $app.on('click', '.ni-inj-acc-header', function() {
@@ -3276,25 +3345,23 @@ jQuery(async () => {
     $app.on('input change', '#ni-user-sub-prompt-preview', () => {
         niSaveUserSubPromptFromUI();
     });
-    $app.on('change', '#ni-user-sub-chk', function() {
-        extension_settings[EXT_NAME].userSubEnabled = this.checked;
-        niSaveUserSubFromUI({ rerender: true });
+    $app.on('change', '#ni-user-sub-chk', async function() {
+        await niSaveUserSubFromUI({ rerender: true });
+        await niPersistUserSubConfig({ immediate: true });
     });
-    $app.on('click', '.ni-user-sub-mode-btn', function() {
+    $app.on('click', '.ni-user-sub-mode-btn', async function() {
         const cfg = niGetUserSubConfig();
         cfg.userSubMode = niNormalizeUserSubMode(this.dataset.userSubMode);
-        niRenderUserSubUI();
-        saveSettingsDebounced();
-        niSyncRoleplayToDepth();
+        niRefreshUserSubDependents({ rerenderUserSub: true });
+        await niPersistUserSubConfig({ immediate: true });
     });
     $app.on('change', '#ni-user-sub-char', async function() {
         const cfg = niGetUserSubConfig();
         cfg.userSubCharIdx = this.value;
         cfg.userSubAliases = niUserSubDefaultAliasesForChar(this.value);
         await niSaveUserSubChatStates({});
-        saveSettingsDebounced();
-        niSyncRoleplayToDepth();
-        niRenderUserSubUI();
+        niRefreshUserSubDependents({ rerenderUserSub: true });
+        await niPersistUserSubConfig({ immediate: true });
     });
     $app.on('click', '#ni-user-sub-add', async function() {
         const cfg = niGetUserSubConfig();
@@ -3305,23 +3372,19 @@ jQuery(async () => {
             firstStage: c ? (getCharFirstStage(c) || '') : '',
             kind: 'custom',
         });
-        saveSettingsDebounced();
-        niSyncRoleplayToDepth();
-        niRenderUserSubUI();
+        niRefreshUserSubDependents({ rerenderUserSub: true });
+        await niPersistUserSubConfig({ immediate: true });
         const last = q('#ni-user-sub-list .ni-user-sub-row:last-child .ni-user-sub-name');
         last?.focus();
     });
     $app.on('click', '#ni-user-sub-reset', async function() {
         await niSaveUserSubChatStates({});
-        niRenderUserSubUI();
-        niSyncRoleplayToDepth();
+        niRefreshUserSubDependents({ rerenderUserSub: true });
     });
     $app.on('change', '.ni-user-sub-enabled', async function() {
         const row = this.closest('.ni-user-sub-row');
         await niSaveUserSubRowState(row);
-        saveSettingsDebounced();
-        niSyncRoleplayToDepth();
-        niSyncUserSubPromptPreview();
+        niRefreshUserSubDependents();
     });
     $app.on('input', '.ni-user-sub-name', () => {
         niSaveUserSubFromUI();
@@ -3331,13 +3394,14 @@ jQuery(async () => {
         await niMigrateUserSubRowState(row);
         niSaveUserSubFromUI();
         await niSaveUserSubRowState(row);
-        niSyncRoleplayToDepth();
+        niRefreshUserSubDependents();
     });
     $app.on('click', '.ni-user-sub-del', async function() {
         const row = this.closest('.ni-user-sub-row');
         await niDeleteUserSubRowState(row);
         row?.remove();
-        niSaveUserSubFromUI({ rerender: true });
+        await niSaveUserSubFromUI({ rerender: true });
+        await niPersistUserSubConfig({ immediate: true });
     });
 
     // 底栏导航
@@ -3656,6 +3720,11 @@ jQuery(async () => {
     $app.on('click', '.ni-char-chk', function() {
         const i = parseInt($(this).data('char-idx'));
         if (!S.characters[i]) return;
+        if (niIsUserSubReplaceSelectedChar(i)) {
+            globalThis.toastr?.info('该角色已由当前聊天的“用户代入角色”替换，原角色人设保持关闭。');
+            renderCharacters();
+            return;
+        }
         const nowOn = !$(this).hasClass('ni-char-chk-on');
         S.characters[i].enabled = nowOn;
         niClearCharAutoSleep(S.characters[i]);
@@ -4073,8 +4142,9 @@ jQuery(async () => {
     niBindDeviationAutoUpdateEvents();
     if (event_types.CHAT_CHANGED) {
         eventSource.on(event_types.CHAT_CHANGED, () => {
-            renderCharacters();
-            setTimeout(() => renderCharacters(), 350);
+            _niDetachedUserSubConfig = null;
+            niRefreshUserSubDependents({ rerenderUserSub: true });
+            setTimeout(() => niRefreshUserSubDependents({ rerenderUserSub: true }), 350);
         });
     }
     niResetDevAutoCounter();
@@ -4167,11 +4237,12 @@ jQuery(document).ready(function () {
             };
 
             // ── 一次性推进/开场提示词 ──────────────────────────
-            // 若没有待推进提示词，检查是否处于"第一节点未完成"状态 → 注入开场提示词
+            // 只有当前确实停在首节点时才注入开场提示词。
+            // 用户从状态栏/弹窗切到后续节点后，早期未归档节点不能再抢占当前阶段。
             if (!niTbPeekPendingAdvancePrompt()) {
                 const nodes = niGetTbNodes();
                 niTbReconcileCurrentNode(nodes);
-                if (nodes.length > 0 && !nodes[0].done) {
+                if (nodes.length > 0 && S.tbCurIdx === 0 && !nodes[0].done) {
                     niTbWriteOpeningPrompt();
                 }
             }
@@ -4220,8 +4291,7 @@ jQuery(document).ready(function () {
         niTbResetPromptRuntimeState();
         niTbLoadState();
         niTbSyncPauseUI();
-        niRenderUserSubUI();
-        niSyncRoleplayToDepth();
+        niRefreshUserSubDependents({ rerenderUserSub: true });
         // 短暂延迟等对话 DOM 就绪
         setTimeout(() => niTbRenderStoryBar(), 300);
     });
@@ -4315,6 +4385,17 @@ console.log('[NI-TB] 穿书模式模块已加载');
         return { nodes: stageNodes, curIdx: localIdx, stageIdx: curNode.stageIdx };
     }
 
+    function niPopCommitCurrentIdx(nextIdx, nodes) {
+        if (typeof window.niTbSetCurrentIdx !== 'function') {
+            console.error('[NI] 穿书弹窗无法同步当前节点：主状态控制器未就绪');
+            return false;
+        }
+        window.niTbSetCurrentIdx(nextIdx, nodes, { persist: true });
+        const mainIdx = window._niS?.tbCurIdx;
+        _popCurIdx = Number.isFinite(Number(mainIdx)) ? Number(mainIdx) : nextIdx;
+        return _popCurIdx === nextIdx;
+    }
+
     // ── 渲染阶段下拉 ──
     function niPopBuildStages(stages, curStageIdx) {
         const drop = q('ni-pop-stage-drop');
@@ -4330,10 +4411,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
                 e.stopPropagation();
                 const { nodes } = niPopGetState();
                 const firstIdx = nodes.findIndex(n => n.stageIdx === s.stageIdx);
-                if (firstIdx >= 0) {
-                    if (typeof window.niTbSetCurrentIdx === 'function') window.niTbSetCurrentIdx(firstIdx, nodes, { persist: true });
-                    _popCurIdx = firstIdx;
-                }
+                if (firstIdx >= 0 && !niPopCommitCurrentIdx(firstIdx, nodes)) return;
                 _popStageOpen = false;
                 drop.classList.remove('vis');
                 const arrow = q('ni-pop-stage-arrow')?.querySelector('span');
@@ -4526,8 +4604,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
     function niPopSetActive(newIdx) {
         const { nodes } = niPopGetState();
         if (newIdx < 0 || newIdx >= nodes.length) return;
-        if (typeof window.niTbSetCurrentIdx === 'function') window.niTbSetCurrentIdx(newIdx, nodes, { persist: true });
-        _popCurIdx = newIdx;
+        if (!niPopCommitCurrentIdx(newIdx, nodes)) return;
         niPopRender();
         // 滚动到新节点
         requestAnimationFrame(() => {
@@ -4540,10 +4617,10 @@ console.log('[NI-TB] 穿书模式模块已加载');
 
     // ── 主渲染 ──
     function niPopRender() {
-        const { nodes, stages } = niPopGetState();
+        const { nodes, stages, curIdx } = niPopGetState();
+        // 弹窗与后台注入必须共享同一当前节点；禁止弹窗保留独立索引造成“看见后期、发送首阶段”。
+        _popCurIdx = curIdx;
         const view = niPopGetStageView(nodes, _popCurIdx);
-        // 注意：_popCurIdx 由 niPopOpen 在弹窗打开时从外部同步一次，
-        // 之后完全由弹窗内部管理，不再从外部覆盖
         const activeStages = stages.filter(s => s.enabled !== false);
         const curStageLocalIdx = Math.max(0, activeStages.findIndex(s => s.stageIdx === view.stageIdx));
         niPopBuildStages(stages, curStageLocalIdx);

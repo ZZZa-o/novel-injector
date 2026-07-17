@@ -246,7 +246,7 @@ README.md
 - 称呼候选来自清洗出的 `character_aliases` 和角色本名。
 - 称呼按出现阶段显示，例如“一阶段”“二阶段”。
 - 用户可以手动添加、编辑、删除称呼。
-- 每个聊天窗口独立保存称呼勾选状态。
+- 每个聊天窗口独立保存代入开关、代入方式、角色、称呼和勾选状态。
 - 支持“重置本聊天勾选”。
 - 替换只发生在注入层，不改原文、不改清洗结果、不改向量数据。
 - 不在检索层兼容原名和 `<user>`，避免 AI 把二者理解成两个人。
@@ -436,7 +436,7 @@ NovelInjectorVectors
 | 清洗压缩正文 | SillyTavern `user/files` 下的 `*_chunks.json` |
 | 向量索引 | 浏览器 IndexedDB：`NovelInjectorVectors` |
 | 穿书节点进度 | 当前聊天首条消息上的 `ni_tb` 数据 |
-| 用户代入称呼勾选状态 | 当前聊天首条消息上的 `ni_user_sub.aliasStates` |
+| 用户代入开关、方式、角色与称呼配置 | 当前聊天的 `chat_metadata.novelInjectorUserSub` |
 
 服务端重数据文件名使用拼音和随机 key，例如：
 
