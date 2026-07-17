@@ -1182,6 +1182,11 @@ const {
     niFindMainParentForSubTitle,
     niRefreshPlotParentField,
     niSetSubParentLink,
+    niRefreshPivotAfterMainField,
+    niTogglePivotMainPicker,
+    niClosePivotMainPicker,
+    niFilterPivotMainPicker,
+    niSelectPivotMain,
     niRefreshPlotInsertField,
     niOpenPlotModal,
     niClosePlotModal,
@@ -3432,13 +3437,40 @@ jQuery(async () => {
     $app.on('click', '#ni-plot-modal-save', () => niSavePlotModal());
     $app.on('click', '#ni-plot-modal-cancel', () => niClosePlotModal());
     // modal 点背景关闭
-    $app.on('click', '#ni-plot-modal', function(e) { if (e.target === this) niClosePlotModal(); });
+    $app.on('click', '#ni-plot-modal', function(e) {
+        if (!e.target.closest?.('#ni-plot-main-picker')) niClosePivotMainPicker();
+        if (e.target === this) niClosePlotModal();
+    });
+    $app.on('click', '#ni-plot-main-picker-toggle', function(e) {
+        e.stopPropagation();
+        niTogglePivotMainPicker();
+    });
+    $app.on('click', '#ni-plot-main-picker-panel', e => e.stopPropagation());
+    $app.on('input', '#ni-plot-main-picker-search', function() {
+        niFilterPivotMainPicker(this.value);
+    });
+    $app.on('keydown', '#ni-plot-main-picker-search', function(e) {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            niClosePivotMainPicker();
+        } else if (e.key === 'Enter') {
+            const first = q('#ni-plot-main-picker-list .ni-main-picker-option');
+            if (first) {
+                e.preventDefault();
+                niSelectPivotMain(first.dataset.mainKey || '');
+            }
+        }
+    });
+    $app.on('click', '.ni-main-picker-option', function() {
+        niSelectPivotMain(this.dataset.mainKey || '');
+    });
     // modal 类型按钮
     $app.on('click', '.ni-plot-type-btn', function() {
         qa('.ni-plot-type-btn').forEach(b => b.classList.remove('on'));
         this.classList.add('on');
         const type = $(this).data('ptype');
         niRefreshPlotParentField(type, q('#ni-plot-modal-title-input')?.value.trim() || '');
+        niRefreshPivotAfterMainField(type);
         niRefreshPlotInsertField(type);
     });
     // 删除模式：点击事件卡选中
