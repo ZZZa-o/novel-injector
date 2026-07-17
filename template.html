@@ -799,13 +799,10 @@
               </div>
             </div>
             <div class="ni-cef-field" id="ni-plot-modal-parent-wrap" style="display:none">
-              <label class="ni-cef-label">关联剧情</label>
-              <select class="ni-modal-input" id="ni-plot-modal-parent" style="cursor:pointer">
-                <option value="">不指定</option>
-              </select>
+              <input type="hidden" id="ni-plot-modal-parent" value="">
             </div>
             <div class="ni-cef-field" id="ni-plot-modal-after-main-wrap" style="display:none">
-              <label class="ni-cef-label">位于主线之后</label>
+              <label class="ni-cef-label" id="ni-plot-picker-field-label">位于主线之后</label>
               <div class="ni-main-picker" id="ni-plot-main-picker">
                 <input type="hidden" id="ni-plot-modal-after-main" value="">
                 <button type="button" class="ni-modal-input ni-main-picker-toggle" id="ni-plot-main-picker-toggle" aria-haspopup="listbox" aria-expanded="false">
@@ -813,11 +810,11 @@
                   <i class="ti ti-chevron-down"></i>
                 </button>
                 <div class="ni-main-picker-panel" id="ni-plot-main-picker-panel" style="display:none">
+                  <div class="ni-main-picker-list" id="ni-plot-main-picker-list" role="listbox"></div>
                   <div class="ni-main-picker-search">
                     <i class="ti ti-search"></i>
                     <input id="ni-plot-main-picker-search" placeholder="搜索编号、标题、时间或地点…" autocomplete="off">
                   </div>
-                  <div class="ni-main-picker-list" id="ni-plot-main-picker-list" role="listbox"></div>
                 </div>
               </div>
             </div>

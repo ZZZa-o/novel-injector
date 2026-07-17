@@ -36,6 +36,7 @@ import {
     createVectorRecallService,
     isVectorRowCompatible,
     niBuildTbLightRecallContext,
+    niBuildTbNodeVectorQuery,
     niBuildWeightedVectorQueries,
     niSelectRecentVectorMessageTexts,
     splitText,
@@ -144,6 +145,7 @@ import {
     NI_THEME_DEFAULT,
     createThemeEditor,
     niApplyStatusbarTheme,
+    niResolveStageInjectionUiState,
 } from './lib/ui-system.js';
 
 // ============================================================
@@ -2284,9 +2286,15 @@ function niPostprocessUserSubMessage(messageId) {
 function niUpdateVecOffBtn() {
     const btn = q('#ni-vec-off-btn');
     const modeWrap = q('.ni-stage-inj-mode-wrap');
-    const hasVec = S.vecDone && Object.values(S.stageVecDone).some(v => v);
+    const uiState = niResolveStageInjectionUiState({
+        stageCount: S.stageMapN,
+        stageStates: S.stageStates,
+        stageVecDone: S.stageVecDone,
+        vecDone: S.vecDone,
+        vecInjDisabled: extension_settings[EXT_NAME]?.vecInjDisabled,
+    });
     // 无向量数据时隐藏按钮，始终显示未向量注入模式选择器
-    if (!hasVec) {
+    if (!uiState.hasAnyVector) {
         if (btn) btn.style.display = 'none';
         if (modeWrap) modeWrap.style.display = '';
         // 也隐藏补全按钮
@@ -2298,12 +2306,13 @@ function niUpdateVecOffBtn() {
         if (modeWrap) modeWrap.style.display = '';
         return;
     }
-    btn.style.display = '';
+    // 顶部模式只跟随当前启用阶段，已关闭阶段残留的向量数据不应影响显示。
+    btn.style.display = uiState.showVectorToggle ? '' : 'none';
     const disabled = !!(extension_settings[EXT_NAME]?.vecInjDisabled);
     btn.classList.toggle('active', disabled);
     btn.title = disabled ? '向量化注入已关闭（点击重新启用）' : '关闭向量化注入（有向量数据但暂不调用）';
-    // 有向量且关闭向量注入时显示未向量注入模式选择器；启用向量注入时隐藏
-    if (modeWrap) modeWrap.style.display = disabled ? '' : 'none';
+    // 只要当前有未向量阶段参与注入，就保留其模式选择器；混合阶段可同时显示两种控制。
+    if (modeWrap) modeWrap.style.display = uiState.showRawMode ? '' : 'none';
     // 有向量数据时，异步检查是否有缺失块，有才显示补全按钮
     if (!S._vecRunning) niCheckFillBtnVisibility();
 }
@@ -2622,12 +2631,11 @@ async function onPromptReady(eventData) {
             niTbReconcileCurrentNode(tbNodes);
             curTbNode = tbNodes[S.tbCurIdx] || null;
         }
-        const lightRecallContext = (extension_settings[EXT_NAME]?.transBookMode && extension_settings[EXT_NAME]?.tbLightRecallMode)
-            ? niBuildTbLightRecallContext(curTbNode)
+        const nodeRecallContext = curTbNode ? niBuildTbLightRecallContext(curTbNode) : null;
+        const lightRecallContext = extension_settings[EXT_NAME]?.tbLightRecallMode
+            ? nodeRecallContext
             : null;
-        const nodeContext = curTbNode
-            ? `【当前剧情节点】${curTbNode.title} 时间：${curTbNode.time || '未知'} 地点：${curTbNode.location || '未知'}\n`
-            : '';
+        const nodeContext = niBuildTbNodeVectorQuery(curTbNode);
 
         // 按用户设置取消息条数；各条消息单独提取后加权召回
         const msgTag    = (extension_settings[EXT_NAME]?.vecMsgTag || '').trim();
@@ -2640,7 +2648,10 @@ async function onPromptReady(eventData) {
 
         if (weightedQueries.length) {
             try {
-                const recallText = await recallRelevantWeighted(weightedQueries, vecStages, { lightRecallContext });
+                const recallText = await recallRelevantWeighted(weightedQueries, vecStages, {
+                    lightRecallContext,
+                    nodeRecallContext,
+                });
                 if (recallText.trim()) {
                     const vecContent = `[小说原著相关片段·向量召回]\n${recallText}\n[/小说原著相关片段·向量召回]`;
                     doInject(`${EXT_NAME}_vec`, vecContent, vecPos, vecDepth, vecRole);
@@ -4060,6 +4071,12 @@ jQuery(async () => {
     eventSource.makeLast?.(event_types.CHAT_COMPLETION_PROMPT_READY, niFinalUserSubPromptRewrite);
     eventSource.makeLast?.(event_types.MESSAGE_RECEIVED, niPostprocessUserSubMessage);
     niBindDeviationAutoUpdateEvents();
+    if (event_types.CHAT_CHANGED) {
+        eventSource.on(event_types.CHAT_CHANGED, () => {
+            renderCharacters();
+            setTimeout(() => renderCharacters(), 350);
+        });
+    }
     niResetDevAutoCounter();
     setTimeout(() => {
         niStartDevAutoCatchup().catch(e => console.warn('[NI] 自动偏差分析启动追赶失败:', e));

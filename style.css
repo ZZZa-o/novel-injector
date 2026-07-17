@@ -1926,7 +1926,7 @@ select.ni-modal-input {
   z-index: 10002;
   left: 0;
   right: 0;
-  top: calc(100% + 4px);
+  bottom: calc(100% + 4px);
   padding: 6px;
   border: 0.5px solid var(--SmartThemeBorderColor);
   border-radius: 6px;
@@ -1955,7 +1955,7 @@ select.ni-modal-input {
 }
 .ni-main-picker-list {
   max-height: 250px;
-  margin-top: 5px;
+  margin-bottom: 5px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
