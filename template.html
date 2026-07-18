@@ -567,9 +567,17 @@
           </div>
           <div id="ni-dev-result-body" style="display:none;">
             <div class="ni-dev-section-list">
-              <div class="ni-dev-section">
-                <label class="ni-dev-section-title" for="ni-dev-changed-facts"><i class="ti ti-git-branch"></i>已改变事实</label>
-                <textarea id="ni-dev-changed-facts" class="ni-dev-section-textarea" rows="5" spellcheck="false" placeholder="输入已改变事实…"></textarea>
+              <div class="ni-dev-section ni-dev-facts-section">
+                <div class="ni-dev-facts-heading">
+                  <span class="ni-dev-section-title"><i class="ti ti-git-branch"></i>当前分支事实</span>
+                  <span class="ni-dev-facts-actions">
+                    <button type="button" class="ni-dev-facts-action" id="ni-dev-facts-history-btn" aria-expanded="false">变更记录</button>
+                    <button type="button" class="ni-dev-facts-action" id="ni-dev-facts-edit-toggle" aria-expanded="false">编辑</button>
+                  </span>
+                </div>
+                <div class="ni-dev-facts-hint">相对原著已经改变、且目前仍然有效的长期事实</div>
+                <div id="ni-dev-facts-list" class="ni-dev-facts-list"></div>
+                <div id="ni-dev-facts-history" class="ni-dev-facts-history" hidden></div>
               </div>
               <div class="ni-dev-section">
                 <label class="ni-dev-section-title" for="ni-dev-current-constraint"><i class="ti ti-adjustments"></i>当前偏差约束</label>

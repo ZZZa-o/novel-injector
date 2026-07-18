@@ -58,6 +58,8 @@ import {
     mergeCharacters,
     niComparePlotOrder,
     niBuildDeviationGuideFromSections,
+    niBuildDeviationFactsContext,
+    niBuildDeviationFactsText,
     niBuildDeviationSectionsFromAnalysis,
     niBuildDevChatEntriesText,
     niDevIsCountableMessage,
@@ -71,6 +73,9 @@ import {
     niFiniteNumber,
     niHashShort,
     niMergeDeviationSections,
+    niNormalizeDeviationFacts,
+    niNormalizeDeviationFactHistory,
+    niReconcileDeviationFacts,
     niMergeDevMessagesByFloor,
     niMergeStageNodes,
     niNormalizeDeviationSections,
@@ -320,6 +325,8 @@ const S = {
     styleGuide: '',         // 生成的文风执行指南文本
     deviationGuide: '',     // 当前偏差注入文本
     devChangedFacts: '',     // 已改变事实：长期分支事实锚点
+    devFacts: [],            // 结构化当前分支事实（含已失效历史条目）
+    devFactHistory: [],      // 本地事实变更记录，不注入 AI
     devCurrentConstraint: '',// 当前偏差约束：每次偏差更新后替换
     devPreservedFacts: '',   // 仍保留的原著事实：每次偏差更新后替换
     devRunning: false,
@@ -1698,6 +1705,27 @@ function niGetLegacyUserSubChatStates() {
     }
 }
 
+function niResizeDeviationFactInlineInput(input) {
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = `${Math.max(24, input.scrollHeight)}px`;
+}
+
+function niAppendDeviationFactInlineDraft() {
+    const list = q('#ni-dev-facts-list');
+    const addButton = q('#ni-dev-fact-add');
+    if (!list || !addButton) return null;
+    const index = list.querySelectorAll('.ni-dev-fact-inline-input').length;
+    const row = document.createElement('div');
+    row.className = 'ni-dev-fact-row ni-dev-fact-row-editing';
+    row.innerHTML = `<div class="ni-dev-fact-main"><span class="ni-dev-fact-status">当前</span><textarea class="ni-dev-fact-inline-input" data-fact-id="" rows="1" spellcheck="false" aria-label="编辑当前分支事实第 ${index + 1} 条" placeholder="输入新的当前分支事实…"></textarea><button type="button" class="ni-dev-fact-remove" aria-label="去除当前分支事实第 ${index + 1} 条" title="去除">去除</button></div>`;
+    addButton.before(row);
+    const input = row.querySelector('.ni-dev-fact-inline-input');
+    niResizeDeviationFactInlineInput(input);
+    input?.focus();
+    return input;
+}
+
 let _niDetachedUserSubConfig = null;
 
 function niGetUserSubConfig() {
@@ -2556,10 +2584,15 @@ const {
     q,
     getContext,
     niNormalizeDeviationSections,
+    niBuildDeviationFactsContext,
+    niBuildDeviationFactsText,
     niBuildDeviationGuideFromSections,
     niParseDeviationGuideSections,
     niBuildDeviationSectionsFromAnalysis,
     niMergeDeviationSections,
+    niNormalizeDeviationFacts,
+    niNormalizeDeviationFactHistory,
+    niReconcileDeviationFacts,
     niNormalizeDevRange,
     niDevRangeLabel,
     niDevRangeProgressLabel,
@@ -3431,6 +3464,59 @@ jQuery(async () => {
     $app.on('click', '#ni-dev-prompt-btn', () => {
         niTogglePanel('ni-dev-pb', 'ni-dev-prompt-btn');
     });
+    $app.on('click', '#ni-dev-facts-history-btn', function() {
+        const panel = q('#ni-dev-facts-history');
+        if (!panel) return;
+        const open = panel.hidden;
+        panel.hidden = !open;
+        this.setAttribute('aria-expanded', String(open));
+    });
+    $app.on('click', '#ni-dev-facts-history-clear', async function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!Array.isArray(S.devFactHistory) || !S.devFactHistory.length) return;
+        if (!confirm('确定清除所有变更记录吗？当前分支事实不会受影响。')) return;
+        S.devFactHistory = [];
+        await niQueueDeviationGuideSave({ immediate: true });
+        niSyncDeviationResultUI({ preserveBody: true });
+    });
+    $app.on('click', '#ni-dev-facts-edit-toggle', async function() {
+        const editing = this.getAttribute('aria-expanded') === 'true';
+        if (!editing) {
+            this.setAttribute('aria-expanded', 'true');
+            this.textContent = '保存';
+            niSyncDeviationResultUI({ preserveBody: true });
+            const firstInput = q('#ni-dev-facts-list')?.querySelector('.ni-dev-fact-inline-input');
+            niResizeDeviationFactInlineInput(firstInput);
+            firstInput?.focus();
+            return;
+        }
+        const sections = niUpdateDeviationSectionsFromUI();
+        this.setAttribute('aria-expanded', 'false');
+        this.textContent = '编辑';
+        if (!niBuildDeviationGuideFromSections(sections).trim()) {
+            S.devCoveredFloor = 0;
+            S.devLastRange = null;
+        }
+        await niQueueDeviationGuideSave({ immediate: true });
+        niSyncDeviationResultUI({ preserveBody: true });
+    });
+    $app.on('input', '.ni-dev-fact-inline-input', function() {
+        niResizeDeviationFactInlineInput(this);
+    });
+    $app.on('click', '.ni-dev-fact-remove', function(e) {
+        e.preventDefault();
+        const row = this.closest('.ni-dev-fact-row-editing');
+        if (!row) return;
+        const nextInput = row.nextElementSibling?.querySelector?.('.ni-dev-fact-inline-input')
+            || row.previousElementSibling?.querySelector?.('.ni-dev-fact-inline-input');
+        row.remove();
+        (nextInput || q('#ni-dev-fact-add'))?.focus();
+    });
+    $app.on('click', '#ni-dev-fact-add', function(e) {
+        e.preventDefault();
+        niAppendDeviationFactInlineDraft();
+    });
     $app.on('change', '#ni-dev-auto-enabled', async () => {
         niSyncDevAutoUI({ syncNote: true });
         niSaveSettings();
@@ -3456,7 +3542,7 @@ jQuery(async () => {
         if (el) el.value = DEV_PROMPT;
         niSaveSettings();
     });
-    $app.on('input', '#ni-dev-changed-facts, #ni-dev-current-constraint, #ni-dev-preserved-facts', function() {
+    $app.on('input', '#ni-dev-current-constraint, #ni-dev-preserved-facts', function() {
         const sections = niUpdateDeviationSectionsFromUI();
         if (!niBuildDeviationGuideFromSections(sections).trim()) {
             S.devCoveredFloor = 0;
@@ -3465,7 +3551,7 @@ jQuery(async () => {
         niSyncDeviationResultUI({ preserveBody: true });
         niQueueDeviationGuideSave();
     });
-    $app.on('blur', '#ni-dev-changed-facts, #ni-dev-current-constraint, #ni-dev-preserved-facts', async function() {
+    $app.on('blur', '#ni-dev-current-constraint, #ni-dev-preserved-facts', async function() {
         const sections = niUpdateDeviationSectionsFromUI();
         if (!niBuildDeviationGuideFromSections(sections).trim()) {
             S.devCoveredFloor = 0;
