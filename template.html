@@ -1036,48 +1036,47 @@
           </label>
           <button class="ni-icon-btn" id="ni-global-prompt-btn" title="编辑提示词" style="margin-left:auto"><i class="ti ti-code"></i></button>
         </div>
+        <!-- 全局提示词面板-->
+        <div class="ni-prompt-box" id="ni-global-pb">
+          <div class="ni-global-source-row">
+            <label class="ni-toggle-label">
+              <input type="checkbox" id="ni-global-source-tavern">
+              <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
+              <span>跟随酒馆预设</span>
+            </label>
+            <label class="ni-toggle-label">
+              <input type="checkbox" id="ni-global-source-builtin" checked>
+              <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
+              <span>内置提示词</span>
+            </label>
+            <label class="ni-toggle-label">
+              <input type="checkbox" id="ni-global-source-none">
+              <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
+              <span>不使用</span>
+            </label>
+          </div>
+          <div id="ni-global-builtin-box">
+            <div class="ni-global-prompt-headrow">
+              <div class="ni-global-prompt-title"><i class="ti ti-arrow-bar-to-up"></i>头部提示词</div>
+              <div class="ni-global-prompt-note">感谢小白手套@ha.7.mi老师授权的破限词</div>
+            </div>
+            <div class="ni-pt-wrap">
+              <textarea id="ni-global-pt-content" class="ni-pt-textarea" spellcheck="false"></textarea>
+              <button class="ni-pt-reset" id="ni-global-pt-reset" title="恢复默认提示词"><i class="ti ti-rotate"></i></button>
+            </div>
+            <div class="ni-global-prompt-title"><i class="ti ti-arrow-bar-to-down"></i>尾部提示词</div>
+            <div class="ni-pt-wrap">
+              <textarea id="ni-global-tail-pt-content" class="ni-pt-textarea" spellcheck="false"></textarea>
+              <button class="ni-pt-reset" id="ni-global-tail-pt-reset" title="清空尾部提示词"><i class="ti ti-rotate"></i></button>
+            </div>
+          </div>
+        </div>
         <label class="ni-toggle-label ni-autosave-row" id="ni-autosave-row" for="ni-autosave-chk">
           <i class="ti ti-device-floppy" aria-hidden="true"></i>
           <span>自动保存</span>
           <input type="checkbox" id="ni-autosave-chk">
           <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
         </label>
-      </div>
-
-      <!-- 全局提示词面板-->
-      <div class="ni-prompt-box" id="ni-global-pb">
-        <div class="ni-global-source-row">
-          <label class="ni-toggle-label">
-            <input type="checkbox" id="ni-global-source-tavern">
-            <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
-            <span>跟随酒馆预设</span>
-          </label>
-          <label class="ni-toggle-label">
-            <input type="checkbox" id="ni-global-source-builtin" checked>
-            <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
-            <span>内置提示词</span>
-          </label>
-          <label class="ni-toggle-label">
-            <input type="checkbox" id="ni-global-source-none">
-            <span class="ni-cfg-chk"><i class="ti ti-check"></i></span>
-            <span>不使用</span>
-          </label>
-        </div>
-        <div id="ni-global-builtin-box">
-          <div class="ni-global-prompt-headrow">
-            <div class="ni-global-prompt-title"><i class="ti ti-arrow-bar-to-up"></i>头部提示词</div>
-            <div class="ni-global-prompt-note">感谢小白手套@ha.7.mi老师授权的破限词</div>
-          </div>
-          <div class="ni-pt-wrap">
-            <textarea id="ni-global-pt-content" class="ni-pt-textarea" spellcheck="false"></textarea>
-            <button class="ni-pt-reset" id="ni-global-pt-reset" title="恢复默认提示词"><i class="ti ti-rotate"></i></button>
-          </div>
-          <div class="ni-global-prompt-title"><i class="ti ti-arrow-bar-to-down"></i>尾部提示词</div>
-          <div class="ni-pt-wrap">
-            <textarea id="ni-global-tail-pt-content" class="ni-pt-textarea" spellcheck="false"></textarea>
-            <button class="ni-pt-reset" id="ni-global-tail-pt-reset" title="清空尾部提示词"><i class="ti ti-rotate"></i></button>
-          </div>
-        </div>
       </div>
 
       <div class="ni-card" id="ni-theme-card">
