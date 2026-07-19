@@ -25,6 +25,7 @@
   --ni-plot-node-bg: var(--color-background-primary);
   --ni-plot-node-head-bg: var(--color-background-secondary);
   --ni-plot-node-body-bg: var(--color-background-primary);
+  --ni-plot-toolbar-bg: var(--color-background-primary);
   --ni-checkbox-on: #fff;
   --ni-checkbox-check-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8.2l2.5 2.5L12 5.3'/%3E%3C/svg%3E");
 }
@@ -53,6 +54,7 @@
   --ni-plot-node-bg: var(--SmartThemeBlurTintColor, var(--color-background-secondary));
   --ni-plot-node-head-bg: var(--SmartThemeBlurTintColor, var(--color-background-secondary));
   --ni-plot-node-body-bg: var(--SmartThemeBlurTintColor, var(--color-background-secondary));
+  --ni-plot-toolbar-bg: var(--SmartThemeBlurTintColor, var(--color-background-tertiary));
   background: transparent;
   color: var(--SmartThemeBodyColor, #ddd);
 }
@@ -1086,8 +1088,20 @@
 
 /* ---- Tabs ----*/
 .ni-tab-row { display: flex; gap: 4px; margin-bottom: 10px; }
+/* 剧情 tab 与编辑操作在节点列表滚动时保持可见，并限制在关键剧情卡片内。*/
+.ni-plot-tab-row {
+  position: sticky;
+  top: -10px;
+  z-index: 12;
+  align-items: center;
+  margin-inline: -13px;
+  padding: 6px 13px;
+  background: var(--ni-plot-toolbar-bg, var(--color-background-primary));
+  border-bottom: .5px solid var(--color-border-tertiary);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
 /* 剧情tab行右侧操作按钮*/
-.ni-plot-tab-row { align-items: center; }
 .ni-plot-tab-actions { margin-left: auto; display: flex; gap: 4px; }
 .ni-plot-tab-actions .ni-char-edit-btn { padding: 2px 3px; }
 /* 删除模式：事件卡可选中*/
