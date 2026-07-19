@@ -2543,6 +2543,11 @@ select.ni-modal-input {
   margin-top: 6px; overflow: hidden;
   margin-left: 34px; margin-right: 0;
 }
+.ni-char-ai-profile-off {
+  background: var(--ni-primary-soft-2, #FBF2F6);
+  border: .5px solid var(--ni-primary-border, #DDB5C0);
+  opacity: .6;
+}
 .ni-char-ai-profile-hdr {
   display: flex; align-items: center; gap: 6px;
   padding: 6px 10px 5px;
@@ -2554,6 +2559,15 @@ select.ni-modal-input {
   letter-spacing: .04em; flex: 1;
 }
 .ni-char-ai-body { }
+.ni-char-ai-off-text {
+  display: block;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  opacity: .72;
+}
 .ni-char-ai-profile .ni-char-eye { color: var(--ni-primary, #A0445E); margin-right: 0; }
 
 /* AI人设粉框内的四格 grid 复用 ni-af-grid，但背景/边框色调整*/
