@@ -98,6 +98,7 @@ import {
     buildRechunkLayout,
     canUseDerivedModules,
     createCleaningController,
+    fingerprintArrayBuffer as niFingerprintArrayBuffer,
 } from './lib/cleaning-system.js';
 
 import {
@@ -338,14 +339,6 @@ const S = {
 };
 
 let niAutosave = null;
-
-async function niFingerprintArrayBuffer(buffer) {
-    const bytes = buffer instanceof ArrayBuffer
-        ? buffer
-        : buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-    const digest = await crypto.subtle.digest('SHA-256', bytes);
-    return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
-}
 
 function niResetChunkDerivedState() {
     S.chunkStatus = S.chunks.map(() => 'pending');
