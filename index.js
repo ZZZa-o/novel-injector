@@ -4358,7 +4358,7 @@ jQuery(document).ready(function () {
     // 消息渲染完成后挂载状态栏
     const onRendered = (messageId) => {
         if (!extension_settings[EXT_NAME]?.transBookMode) return;
-        setTimeout(() => niTbRenderStoryBar(), 100);
+        setTimeout(() => niTbRenderStoryBar({ resetView: true }), 100);
     };
 
     eventSource.on(event_types.MESSAGE_RENDERED,            onRendered);
@@ -4442,7 +4442,8 @@ console.log('[NI-TB] 穿书模式模块已加载');
             const stages = window.niGetTbStages();
             const S      = window._niS;
             const curIdx = (S && typeof S.tbCurIdx === 'number') ? S.tbCurIdx : _popCurIdx;
-            return { nodes, stages, curIdx };
+            const viewIdx = (S && typeof S.tbViewIdx === 'number') ? S.tbViewIdx : curIdx;
+            return { nodes, stages, curIdx, viewIdx };
         }
         // fallback：旧路径
         const cfg = (typeof extension_settings !== 'undefined' && typeof EXT_NAME !== 'undefined')
@@ -4450,7 +4451,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
         const nodes  = (cfg && Array.isArray(cfg.tbNodes))  ? cfg.tbNodes  : [];
         const stages = (cfg && Array.isArray(cfg.tbStages)) ? cfg.tbStages : [];
         const curIdx = (cfg && typeof cfg.tbCurIdx === 'number') ? cfg.tbCurIdx : _popCurIdx;
-        return { nodes, stages, curIdx };
+        return { nodes, stages, curIdx, viewIdx: curIdx };
     }
 
     function niPopGetStageView(nodes, curIdx) {
@@ -4464,12 +4465,13 @@ console.log('[NI-TB] 穿书模式模块已加载');
         return { nodes: stageNodes, curIdx: localIdx, stageIdx: curNode.stageIdx };
     }
 
-    function niPopCommitCurrentIdx(nextIdx, nodes) {
+    function niPopCommitCurrentIdx(nextIdx, nodes, { archivePrior = false } = {}) {
         if (typeof window.niTbSetCurrentIdx !== 'function') {
             console.error('[NI] 穿书弹窗无法同步当前节点：主状态控制器未就绪');
             return false;
         }
-        window.niTbSetCurrentIdx(nextIdx, nodes, { persist: true });
+        window.niTbSetCurrentIdx(nextIdx, nodes, { persist: true, archivePrior });
+        window.niTbSetViewIdx?.(nextIdx, nodes, { render: true });
         const mainIdx = window._niS?.tbCurIdx;
         _popCurIdx = Number.isFinite(Number(mainIdx)) ? Number(mainIdx) : nextIdx;
         return _popCurIdx === nextIdx;
@@ -4490,7 +4492,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
                 e.stopPropagation();
                 const { nodes } = niPopGetState();
                 const firstIdx = nodes.findIndex(n => n.stageIdx === s.stageIdx);
-                if (firstIdx >= 0 && !niPopCommitCurrentIdx(firstIdx, nodes)) return;
+                if (firstIdx >= 0 && !niPopCommitCurrentIdx(firstIdx, nodes, { archivePrior: true })) return;
                 _popStageOpen = false;
                 drop.classList.remove('vis');
                 const arrow = q('ni-pop-stage-arrow')?.querySelector('span');
@@ -4539,7 +4541,7 @@ console.log('[NI-TB] 穿书模式模块已加载');
                 e.preventDefault();
                 if (n.locked) return;
                 if (!e.target.closest('.ni-nr-chk')) {
-                    niPopSetActive(gi);
+                    niPopSetActive(gi, { archivePrior: true });
                     return;
                 }
                 const chkEl = q('ni-pop-chk' + gi);
@@ -4679,11 +4681,20 @@ console.log('[NI-TB] 穿书模式模块已加载');
                        + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
     }
 
-    // ── 更新当前节点、自动归档状态和滚动位置 ──
-    function niPopSetActive(newIdx) {
+    // ── 更新预览节点；只有列表明确选点时才提交后台节点并归档前序节点 ──
+    function niPopSetActive(newIdx, { archivePrior = false } = {}) {
         const { nodes } = niPopGetState();
         if (newIdx < 0 || newIdx >= nodes.length) return;
-        if (!niPopCommitCurrentIdx(newIdx, nodes)) return;
+        if (archivePrior) {
+            if (!niPopCommitCurrentIdx(newIdx, nodes, { archivePrior: true })) return;
+        } else {
+            if (typeof window.niTbSetViewIdx !== 'function') {
+                console.error('[NI] 穿书弹窗无法切换预览节点：主状态控制器未就绪');
+                return;
+            }
+            window.niTbSetViewIdx(newIdx, nodes, { render: true });
+            _popCurIdx = newIdx;
+        }
         niPopRender();
         // 滚动到新节点
         requestAnimationFrame(() => {
@@ -4696,9 +4707,9 @@ console.log('[NI-TB] 穿书模式模块已加载');
 
     // ── 主渲染 ──
     function niPopRender() {
-        const { nodes, stages, curIdx } = niPopGetState();
-        // 弹窗与后台注入必须共享同一当前节点；禁止弹窗保留独立索引造成“看见后期、发送首阶段”。
-        _popCurIdx = curIdx;
+        const { nodes, stages, viewIdx } = niPopGetState();
+        // 弹窗展示预览节点；后台注入继续使用用户在节点列表中确认的节点。
+        _popCurIdx = Number.isInteger(viewIdx) && viewIdx >= 0 && viewIdx < nodes.length ? viewIdx : 0;
         const view = niPopGetStageView(nodes, _popCurIdx);
         const activeStages = stages.filter(s => s.enabled !== false);
         const curStageLocalIdx = Math.max(0, activeStages.findIndex(s => s.stageIdx === view.stageIdx));
@@ -4714,9 +4725,9 @@ console.log('[NI-TB] 穿书模式模块已加载');
     // ── 弹窗开关 ──
     function niPopOpen() {
         _popOpen = true;
-        // 每次打开时从主插件重新同步当前节点索引
-        const { curIdx } = niPopGetState();
-        _popCurIdx = curIdx;
+        // 每次打开时同步当前预览节点；预览不会改写后台注入节点。
+        const { viewIdx } = niPopGetState();
+        _popCurIdx = viewIdx;
         const fab = q('ni-fab'), panel = q('ni-popup-panel'), overlay = q('ni-popup-overlay');
         if (fab) fab.classList.add('open');
         if (panel) { panel.style.display = 'flex'; requestAnimationFrame(() => panel.classList.add('vis')); }
@@ -4830,8 +4841,8 @@ console.log('[NI-TB] 穿书模式模块已加载');
         q('ni-pop-stage-row')?.addEventListener('click', () => {
             // 弹窗可能持续打开；展开阶段选择前重新读取主模块的最新状态。
             const latest = niPopGetState();
-            if (Number.isInteger(latest.curIdx) && latest.curIdx >= 0 && latest.curIdx < latest.nodes.length) {
-                _popCurIdx = latest.curIdx;
+            if (Number.isInteger(latest.viewIdx) && latest.viewIdx >= 0 && latest.viewIdx < latest.nodes.length) {
+                _popCurIdx = latest.viewIdx;
             }
             niPopRender();
             _popStageOpen = !_popStageOpen;
