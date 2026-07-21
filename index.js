@@ -1711,7 +1711,7 @@ function niAppendDeviationFactInlineDraft() {
     const index = list.querySelectorAll('.ni-dev-fact-inline-input').length;
     const row = document.createElement('div');
     row.className = 'ni-dev-fact-row ni-dev-fact-row-editing';
-    row.innerHTML = `<div class="ni-dev-fact-main"><span class="ni-dev-fact-status">当前</span><textarea class="ni-dev-fact-inline-input" data-fact-id="" rows="1" spellcheck="false" aria-label="编辑当前分支事实第 ${index + 1} 条" placeholder="输入新的当前分支事实…"></textarea><button type="button" class="ni-dev-fact-remove" aria-label="去除当前分支事实第 ${index + 1} 条" title="去除">去除</button></div>`;
+    row.innerHTML = `<div class="ni-dev-fact-main"><span class="ni-dev-fact-status">事实</span><textarea class="ni-dev-fact-inline-input" data-fact-id="" data-fact-kind="fact" rows="1" spellcheck="false" aria-label="编辑当前分支事实第 ${index + 1} 条" placeholder="输入新的当前分支事实…"></textarea><button type="button" class="ni-dev-fact-remove" aria-label="去除当前分支事实第 ${index + 1} 条" title="去除">去除</button></div>`;
     addButton.before(row);
     const input = row.querySelector('.ni-dev-fact-inline-input');
     niResizeDeviationFactInlineInput(input);
