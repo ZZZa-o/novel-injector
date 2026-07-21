@@ -681,6 +681,11 @@
 }
 .ni-timeout-label i { font-size: 13px; color: var(--color-text-tertiary); }
 .ni-stream-timeout-row .ni-kb-inp { padding-left: 0px; padding-right: 0px; }
+.ni-stream-timeout-row .ni-vec-batch-select {
+  width: 42px;
+  padding: 2px 14px 2px 4px;
+  cursor: pointer;
+}
 
 .ni-icon-btn {
   width: 34px; height: 34px;

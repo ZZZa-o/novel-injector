@@ -232,6 +232,18 @@
               <i class="ti ti-arrows-split"></i>并发
               <input type="text" id="ni-vec-concurrency" class="ni-kb-inp" value="1" style="width:14px" inputmode="numeric" pattern="[0-9]*">
             </label>
+            <label class="ni-timeout-label" title="每次 Embedding API 请求批量提交的文本块数；批量可减少请求次数，但会增加单次请求负载">
+              <i class="ti ti-packages"></i>每批
+              <select id="ni-vec-batch-size" class="ni-kb-inp ni-vec-batch-select">
+                <option value="1">1</option>
+                <option value="4">4</option>
+                <option value="8">8</option>
+                <option value="16" selected>16</option>
+                <option value="20">20</option>
+                <option value="32">32</option>
+              </select>
+              <span>块</span>
+            </label>
           </div>
           <div class="ni-field">
             <label>API 端点</label>

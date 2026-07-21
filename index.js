@@ -233,6 +233,7 @@ const DEFAULT_SETTINGS = {
     apiConcurrency: 1,  // 清洗、阶段概括和角色 AI 人设共用的最大并发请求数；0按串行兼容
     vecRateLimit: 3,    // 向量化每分钟最多请求次数
     vecConcurrency: 1,  // 1=串行；>1=最大并发请求数；0按串行兼容
+    vecBatchSize: 16,   // 每次 Embedding 请求批量提交的文本块数
     pluginEnabled: true,  // 插件总开关
     autoSaveEnabled: false, // 默认关闭，需用户手动开启
     topbarIconVisible: true, // 酒馆顶部栏图标显示开关
@@ -661,6 +662,7 @@ function niSaveSettings() {
     cfg.apiConcurrency = niCfgBoundInt('#ni-api-concurrency', DEFAULT_SETTINGS.apiConcurrency, 0, 99);
     cfg.vecRateLimit  = Math.max(0, parseInt(q('#ni-vec-rate-limit')?.value) ?? DEFAULT_SETTINGS.vecRateLimit);
     cfg.vecConcurrency = niCfgBoundInt('#ni-vec-concurrency', DEFAULT_SETTINGS.vecConcurrency, 0, 99);
+    cfg.vecBatchSize = niCfgBoundInt('#ni-vec-batch-size', DEFAULT_SETTINGS.vecBatchSize, 1, 100);
     // 持久化运行时数据
     cfg._stageStates   = S.stageStates;
     cfg._stageSummaries= S.stageSummaries;
@@ -773,6 +775,7 @@ function syncSettingsToUI() {
     sv('#ni-api-concurrency', cfg.apiConcurrency ?? DEFAULT_SETTINGS.apiConcurrency);
     sv('#ni-vec-rate-limit', cfg.vecRateLimit ?? DEFAULT_SETTINGS.vecRateLimit);
     sv('#ni-vec-concurrency', cfg.vecConcurrency ?? DEFAULT_SETTINGS.vecConcurrency);
+    sv('#ni-vec-batch-size', cfg.vecBatchSize ?? DEFAULT_SETTINGS.vecBatchSize);
     niSyncThemeUI();
     niApplyCurrentTheme();
     const ptEl = q('#ni-pt-content');
@@ -1161,7 +1164,7 @@ const {
     serverLoadHeavy: (...args) => niServerLoadHeavy(...args),
     concurrencyLimit,
     setBtn: (...args) => setBtn(...args),
-    embedText: (...args) => embedText(...args),
+    niRequestEmbeddings: (...args) => niRequestEmbeddings(...args),
     buildStages: (...args) => buildStages(...args),
     saveSettings: niSaveSettings,
     escapeHtml: niEscHtml,
@@ -3164,6 +3167,7 @@ jQuery(async () => {
     $app.on('input', '#ni-api-concurrency', () => niSaveSettings());
     $app.on('input', '#ni-vec-rate-limit', () => niSaveSettings());
     $app.on('input', '#ni-vec-concurrency', () => niSaveSettings());
+    $app.on('change', '#ni-vec-batch-size', () => niSaveSettings());
 
     // 流式开关
     $app.on('change', '#ni-clean-stream', function() {
