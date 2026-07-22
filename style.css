@@ -782,6 +782,10 @@
   min-width: 0;
 }
 .ni-vec-hint-inline i { flex: 0 0 auto; font-size: 12px; line-height: inherit; }
+#ni-vec-hint-inline.ni-vec-hint-warning #ni-vec-hint-icon {
+  position: relative;
+  top: 1px;
+}
 #ni-vec-hint-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .ni-vec-hint-inline.ni-vec-hint-warning {
   color: var(--ni-warning, #C05A62);
