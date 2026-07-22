@@ -681,11 +681,18 @@
 }
 .ni-timeout-label i { font-size: 13px; color: var(--color-text-tertiary); }
 .ni-stream-timeout-row .ni-kb-inp { padding-left: 0px; padding-right: 0px; }
-.ni-stream-timeout-row .ni-vec-batch-select {
-  width: 42px;
-  padding: 2px 14px 2px 4px;
+#ni-app #ni-vec-batch-size {
+  width: 20px !important;
+  padding: 2px 4px !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  background-image: none !important;
+  text-align: center !important;
+  text-align-last: center !important;
   cursor: pointer;
 }
+#ni-app #ni-vec-batch-size::-ms-expand { display: none !important; }
 
 .ni-icon-btn {
   width: 34px; height: 34px;
