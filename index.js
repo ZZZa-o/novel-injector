@@ -43,6 +43,7 @@ import {
     createEmbeddingClient,
     createVectorController,
     createVectorRecallService,
+    findVectorStageSourceMismatches,
     getVectorCompatibilityHint,
     isVectorRowCompatible,
     niBuildTbLightRecallContext,
@@ -324,6 +325,7 @@ const S = {
     vecDone: false,
     stageVecDone: {},     // {[stageIdx]: boolean} — 各阶段是否已向量化
     stageVecExpected: {}, // {[stageIdx]: number} — 各阶段完整向量块数
+    stageVecSourceMismatch: {}, // {[stageIdx]: boolean} — 与当前向量配置来源不同，仅供诊断显示
     db: null,
     novelKey: '',         // IndexedDB 隔离 key，基于文件名
     heavyFileKey: '',     // 服务端重数据文件 key，基于用户快照名
@@ -372,6 +374,7 @@ function niResetStageVectorState() {
     S.vecDone = false;
     S.stageVecDone = {};
     S.stageVecExpected = {};
+    S.stageVecSourceMismatch = {};
 }
 
 function niRechunkPreservingCompleted(kb) {
@@ -1176,6 +1179,7 @@ async function niHandleVectorRowsChanged(rows = [], { novelKey = S.novelKey } = 
 
     niVectorDiagnosticNovelKey = activeNovelKey;
     niStoredVectorDiagnosticRows = rowList.map((row, index) => ({
+        stageIdx: Number(row?.stageIdx) || 0,
         dimension: Number(row?.vector?.length) || 0,
         fingerprint: fingerprints[index] || '',
     }));
@@ -1188,7 +1192,12 @@ async function niHandleVectorRowsChanged(rows = [], { novelKey = S.novelKey } = 
     niStoredVectorCompatibility = summarizeVectorCompatibility(niStoredVectorDiagnosticRows, {
         currentFingerprint,
     });
+    S.stageVecSourceMismatch = findVectorStageSourceMismatches(
+        niStoredVectorDiagnosticRows,
+        currentFingerprint,
+    );
     niRenderVectorCompatibilityHint();
+    niRenderVecStageSelector();
 }
 
 async function niRefreshCurrentVectorSourceHint() {
@@ -1207,7 +1216,12 @@ async function niRefreshCurrentVectorSourceHint() {
     niStoredVectorCompatibility = summarizeVectorCompatibility(niStoredVectorDiagnosticRows, {
         currentFingerprint,
     });
+    S.stageVecSourceMismatch = findVectorStageSourceMismatches(
+        niStoredVectorDiagnosticRows,
+        currentFingerprint,
+    );
     niRenderVectorCompatibilityHint();
+    niRenderVecStageSelector();
 }
 
 function niHandleVectorQueryCompared(rows = [], queryDimensions = 0, { novelKey = S.novelKey } = {}) {

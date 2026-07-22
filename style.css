@@ -774,7 +774,7 @@
   font-size: 11px;
   color: var(--color-text-tertiary);
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   gap: 4px;
   flex: 1;
   flex-wrap: nowrap;
@@ -1841,6 +1841,11 @@
   background: var(--ni-success-soft, #E1F5EE);
   color: var(--ni-success-text, #0F6E56);
   flex-shrink: 0;
+}
+.ni-vec-done-badge.ni-vec-source-warning {
+  background: var(--ni-warning-soft, rgba(192, 90, 98, .12));
+  color: var(--ni-warning, #C05A62);
+  border: .5px solid var(--ni-warning-border, rgba(192, 90, 98, .35));
 }
 
 /* ── 阶段卡片向量状态标签 ──*/
