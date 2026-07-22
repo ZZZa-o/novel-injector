@@ -28,7 +28,13 @@ import {
     promptManager,
 } from '/scripts/openai.js';
 
-import { createStorageController, niEscAttr, niEscHtml } from './lib/storage-system.js';
+import {
+    createStorageController,
+    niEscAttr,
+    niEscHtml,
+    niSafeVectorFingerprint,
+    niSafeVectorFingerprints,
+} from './lib/storage-system.js';
 import { createAutosaveController } from './lib/autosave-system.js';
 
 import {
@@ -37,12 +43,14 @@ import {
     createEmbeddingClient,
     createVectorController,
     createVectorRecallService,
+    getVectorCompatibilityHint,
     isVectorRowCompatible,
     niBuildTbLightRecallContext,
     niBuildTbNodeVectorQuery,
     niBuildWeightedVectorQueries,
     niSelectRecentVectorMessageTexts,
     splitText,
+    summarizeVectorCompatibility,
     vecToBuffer,
     vecToBytes,
 } from './lib/vector-system.js';
@@ -453,7 +461,7 @@ function niResetNovelWorkspace() {
 // IndexedDB 封装
 // ============================================================
 
-// --- fingerprint：标识当前 embedding 引擎，换模型时自动失效旧向量 ---
+// 兼容旧版本角色扮演提示词。
 function niUpgradeRoleplayPrompt(cfg = extension_settings[EXT_NAME] || {}) {
     if (!cfg || typeof cfg.roleplayPrompt !== 'string') return false;
     let nextPrompt = cfg.roleplayPrompt;
@@ -1129,6 +1137,88 @@ const { niRequestEmbeddings, embedText } = createEmbeddingClient({
     defaultSettings: DEFAULT_SETTINGS,
 });
 
+let niVectorDiagnosticNovelKey = '';
+let niStoredVectorDiagnosticRows = [];
+let niStoredVectorCompatibility = null;
+let niQueryVectorCompatibility = null;
+
+function niRenderVectorCompatibilityHint() {
+    const hintEl = q('#ni-vec-hint-inline');
+    if (!hintEl) return;
+    const presentation = getVectorCompatibilityHint({
+        stored: niStoredVectorCompatibility,
+        query: niQueryVectorCompatibility,
+    });
+    const iconEl = q('#ni-vec-hint-icon');
+    const textEl = q('#ni-vec-hint-text');
+    if (iconEl) iconEl.className = `ti ${presentation.icon}`;
+    if (textEl) textEl.textContent = presentation.text;
+    hintEl.title = presentation.title || presentation.text;
+    hintEl.classList.toggle('ni-vec-hint-warning', presentation.level === 'warning');
+
+    // 异常提示优先于已结束的进度文字；正在向量化时仍保留实时进度。
+    if (presentation.level === 'warning' && !S._vecRunning) {
+        const titleProgress = q('#ni-vp-title-prog');
+        const vectorCard = q('#ni-vp-card');
+        if (titleProgress) titleProgress.style.display = 'none';
+        if (vectorCard) vectorCard.classList.remove('ni-has-prog');
+    }
+}
+
+async function niHandleVectorRowsChanged(rows = [], { novelKey = S.novelKey } = {}) {
+    const activeNovelKey = String(S.novelKey || '');
+    const inspectedNovelKey = String(novelKey || '');
+    if (inspectedNovelKey !== activeNovelKey) return;
+
+    const rowList = (rows || []).filter(Boolean);
+    const fingerprints = await niSafeVectorFingerprints(rowList.map(row => row.fingerprint || ''));
+    if (String(S.novelKey || '') !== activeNovelKey) return;
+
+    niVectorDiagnosticNovelKey = activeNovelKey;
+    niStoredVectorDiagnosticRows = rowList.map((row, index) => ({
+        dimension: Number(row?.vector?.length) || 0,
+        fingerprint: fingerprints[index] || '',
+    }));
+    niQueryVectorCompatibility = null;
+
+    const currentFingerprint = activeNovelKey
+        ? await niSafeVectorFingerprint(getVectorFingerprint())
+        : '';
+    if (String(S.novelKey || '') !== activeNovelKey) return;
+    niStoredVectorCompatibility = summarizeVectorCompatibility(niStoredVectorDiagnosticRows, {
+        currentFingerprint,
+    });
+    niRenderVectorCompatibilityHint();
+}
+
+async function niRefreshCurrentVectorSourceHint() {
+    const activeNovelKey = String(S.novelKey || '');
+    if (niVectorDiagnosticNovelKey !== activeNovelKey) {
+        const rows = activeNovelKey ? await dbLoadByNovel() : [];
+        await niHandleVectorRowsChanged(rows, { novelKey: activeNovelKey });
+        return;
+    }
+
+    niQueryVectorCompatibility = null;
+    const currentFingerprint = activeNovelKey
+        ? await niSafeVectorFingerprint(getVectorFingerprint())
+        : '';
+    if (String(S.novelKey || '') !== activeNovelKey) return;
+    niStoredVectorCompatibility = summarizeVectorCompatibility(niStoredVectorDiagnosticRows, {
+        currentFingerprint,
+    });
+    niRenderVectorCompatibilityHint();
+}
+
+function niHandleVectorQueryCompared(rows = [], queryDimensions = 0, { novelKey = S.novelKey } = {}) {
+    if (String(novelKey || '') !== String(S.novelKey || '')) return;
+    niQueryVectorCompatibility = summarizeVectorCompatibility(
+        (rows || []).map(row => ({ dimension: Number(row?.vector?.length) || 0 })),
+        { queryDimensions },
+    );
+    niRenderVectorCompatibilityHint();
+}
+
 const {
     getVectorFingerprint,
     dbOpen,
@@ -1136,7 +1226,6 @@ const {
     dbLoadByNovel,
     dbClearNovel,
     dbCloneNovelKey,
-    dbCheckFingerprint,
     persistVecState,
     niReconcileVecStateFromDb,
     niVectorConcurrencyLimit,
@@ -1169,6 +1258,7 @@ const {
     saveSettings: niSaveSettings,
     escapeHtml: niEscHtml,
     togglePanel: niTogglePanel,
+    onVectorRowsChanged: niHandleVectorRowsChanged,
 });
 
 const {
@@ -2501,10 +2591,10 @@ const { recallRelevantWeighted, recallRelevant } = createVectorRecallService({
     getState: () => S,
     defaultSettings: DEFAULT_SETTINGS,
     dbLoadByNovel,
-    getVectorFingerprint,
     cosineSim,
     isVectorRowCompatible,
     embeddingClient: { niRequestEmbeddings, embedText },
+    onVectorQueryCompared: niHandleVectorQueryCompared,
 });
 
 // ============================================================
@@ -2925,7 +3015,10 @@ async function fetchModels(urlInputId, keyInputId, selectId, textInputId) {
                 onSelected: value => {
                     const cfg = extension_settings[EXT_NAME];
                     if (textInputId === 'ni-clean-model') cfg.cleanModel = value;
-                    else if (textInputId === 'ni-vec-model') cfg.vecModel = value;
+                    else if (textInputId === 'ni-vec-model') {
+                        cfg.vecModel = value;
+                        niRefreshCurrentVectorSourceHint().catch(e => console.warn('[NI] 刷新向量来源提示失败:', e));
+                    }
                     niSaveSettings();
                 },
             });
@@ -3257,16 +3350,42 @@ jQuery(async () => {
         try {
             const chunks = await dbLoadByNovel();
             const stageCount = {};
+            const rawFingerprintCount = {};
             chunks.forEach(c => {
                 const si = Number(c.stageIdx);
                 stageCount[si] = (stageCount[si] || 0) + 1;
+                const fingerprint = String(c.fingerprint || '(旧版未记录)');
+                rawFingerprintCount[fingerprint] = (rawFingerprintCount[fingerprint] || 0) + 1;
             });
+            const fingerprintCount = {};
+            for (const [rawFingerprint, count] of Object.entries(rawFingerprintCount)) {
+                const fingerprint = rawFingerprint === '(旧版未记录)'
+                    ? rawFingerprint
+                    : (await niSafeVectorFingerprint(rawFingerprint) || '(摘要不可用)');
+                fingerprintCount[fingerprint] = (fingerprintCount[fingerprint] || 0) + count;
+            }
+            const currentFingerprint = await niSafeVectorFingerprint(getVectorFingerprint());
+            const dimensionReport = summarizeVectorCompatibility(chunks);
 
             let msg = '=== IndexedDB 诊断 ===\n';
             msg += `novelKey: ${S.novelKey || '(空)'}\n`;
             msg += `总向量块数: ${chunks.length}\n`;
             msg += `stageMapN: ${S.stageMapN}\n`;
             msg += `stageVecDone: ${JSON.stringify(S.stageVecDone)}\n\n`;
+            if (dimensionReport.dimensions.length) {
+                msg += `数据库向量维度: ${dimensionReport.dimensions.map(dimension => `${dimension}维×${dimensionReport.dimensionCounts[dimension]}`).join('，')}\n`;
+            }
+            if (niQueryVectorCompatibility?.queryDimensions > 0) {
+                msg += `最近查询向量维度: ${niQueryVectorCompatibility.queryDimensions}\n`;
+            }
+            msg += `本机向量配置指纹: ${currentFingerprint || '(摘要不可用)'}\n`;
+            if (Object.keys(fingerprintCount).length) {
+                msg += '数据库向量来源指纹:\n';
+                Object.entries(fingerprintCount).forEach(([fingerprint, n]) => {
+                    msg += `  ${fingerprint}: ${n} 块\n`;
+                });
+            }
+            msg += '说明：指纹仅供诊断；跨设备导入或本机切换模型后，已有向量仍会打标并参与召回。\n\n';
 
             if (chunks.length > 0) {
                 msg += '各阶段实际向量块数:\n';
@@ -3313,6 +3432,10 @@ jQuery(async () => {
     });
 
     $app.on('input', '#ni-vec-key, #ni-vec-url, #ni-vec-model', () => niSaveSettings());
+    $app.on('change', '#ni-vec-url, #ni-vec-model', () => {
+        niSaveSettings();
+        niRefreshCurrentVectorSourceHint().catch(e => console.warn('[NI] 刷新向量来源提示失败:', e));
+    });
 
     // 注入设置折叠
     $app.on('click', '#ni-inj-toggle', () => {

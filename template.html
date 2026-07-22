@@ -184,7 +184,7 @@
       <div class="ni-card" id="ni-vp-card">
         <div class="ni-ctitle">
           <span class="ni-ctitle-label"><i class="ti ti-vector"></i>向量化</span>
-          <span class="ni-vec-hint-inline"><i class="ti ti-info-circle"></i>各阶段独立索引，阶段页开关控制检索。</span>
+          <span class="ni-vec-hint-inline" id="ni-vec-hint-inline" aria-live="polite"><i class="ti ti-info-circle" id="ni-vec-hint-icon"></i><span id="ni-vec-hint-text">各阶段独立索引，阶段页开关控制检索。</span></span>
           <div class="ni-ctitle-prog" id="ni-vp-title-prog" style="display:none">
             <span class="ni-title-note" id="ni-vp-title-note"></span>
             <div class="ni-ctitle-prog-track">
@@ -1238,7 +1238,7 @@
       <!-- 3. 导入/导出-->
       <div class="ni-card">
         <div class="ni-ctitle"><span class="ni-ctitle-label"><i class="ti ti-transfer"></i>导入 / 导出</span></div>
-        <p class="ni-desc">将当前所有设置（清洗文本、文风、剧情节点、角色人设、阶段划分、API 配置）及向量数据打包为 ZIP 文件，可用于跨设备迁移或备份恢复。旧版 JSON 文件仍可导入（不含向量）。</p>
+        <p class="ni-desc">将小说内容、文风、剧情节点、角色人设、阶段划分、非敏感设置及向量数据打包为 ZIP 文件，可用于跨设备迁移或备份恢复。API 地址、模型和 Key 不会导出；向量指纹仅保存不可逆摘要。旧版 JSON 文件仍可导入（不含向量）。</p>
         <div class="ni-tool-row" style="flex-wrap:wrap;gap:8px">
           <button class="ni-btn ni-btn-p ni-btn-inline" id="ni-export-btn"><i class="ti ti-file-export"></i>导出 ZIP</button>
           <button class="ni-btn ni-btn-w ni-btn-inline" id="ni-import-btn"><i class="ti ti-file-import"></i>导入 ZIP / JSON</button>

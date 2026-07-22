@@ -774,14 +774,21 @@
   font-size: 11px;
   color: var(--color-text-tertiary);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   flex: 1;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   line-height: 1.4;
   min-width: 0;
 }
-.ni-vec-hint-inline i { flex-shrink: 0; font-size: 12px; }
+.ni-vec-hint-inline i { flex: 0 0 auto; font-size: 12px; line-height: inherit; }
+#ni-vec-hint-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.ni-vec-hint-inline.ni-vec-hint-warning {
+  color: var(--ni-warning, #C05A62);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
 .ni-kb-inp {
   width: 52px;
   padding: 5px 7px;
