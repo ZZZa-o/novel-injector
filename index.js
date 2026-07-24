@@ -38,6 +38,13 @@ import {
 import { createAutosaveController } from './lib/autosave-system.js';
 
 import {
+    niIsVectorInjectionDisabledByUser,
+    niNormalizeVectorInjectionPreference,
+    niResolveStageInjectionPlan,
+    niSetVectorInjectionDisabledByUser,
+} from './lib/injection-system.js';
+
+import {
     bytesToVecs,
     cosineSim,
     createEmbeddingClient,
@@ -262,6 +269,7 @@ const DEFAULT_SETTINGS = {
     themePresetOverrides: {},
     themeDeletedPresetIds: [],
     vecInjDisabled: false, // 有向量数据但用户选择不调用向量注入
+    vecInjDisabledByUser: false, // 仅用户主动点击关闭时为 true；旧设置残留不能屏蔽向量
     tbRestoreAfterPluginEnable: false,
     novelLibrary: [],     // 小说快照库 [{name, key, snapshot}]
     // 世界设定注入设置
@@ -490,6 +498,7 @@ function niLoadSettings() {
     Object.keys(DEFAULT_SETTINGS).forEach(k => {
         if (saved[k] === undefined) saved[k] = DEFAULT_SETTINGS[k];
     });
+    if (niNormalizeVectorInjectionPreference(saved)) saveSettingsDebounced();
     if (saved._charAutoSleepInitialized !== true) {
         saved.charAutoSleepEnabled = true;
         saved._charAutoSleepInitialized = true;
@@ -2478,12 +2487,14 @@ function niPostprocessUserSubMessage(messageId) {
 function niUpdateVecOffBtn() {
     const btn = q('#ni-vec-off-btn');
     const modeWrap = q('.ni-stage-inj-mode-wrap');
+    const cfg = extension_settings[EXT_NAME] || {};
+    const vectorInjectionDisabled = niIsVectorInjectionDisabledByUser(cfg);
     const uiState = niResolveStageInjectionUiState({
         stageCount: S.stageMapN,
         stageStates: S.stageStates,
         stageVecDone: S.stageVecDone,
         vecDone: S.vecDone,
-        vecInjDisabled: extension_settings[EXT_NAME]?.vecInjDisabled,
+        vecInjDisabled: vectorInjectionDisabled,
     });
     // 无向量数据时隐藏按钮，始终显示未向量注入模式选择器
     if (!uiState.hasAnyVector) {
@@ -2500,7 +2511,7 @@ function niUpdateVecOffBtn() {
     }
     // 顶部模式只跟随当前启用阶段，已关闭阶段残留的向量数据不应影响显示。
     btn.style.display = uiState.showVectorToggle ? '' : 'none';
-    const disabled = !!(extension_settings[EXT_NAME]?.vecInjDisabled);
+    const disabled = vectorInjectionDisabled;
     btn.classList.toggle('active', disabled);
     btn.title = disabled ? '向量化注入已关闭（点击重新启用）' : '关闭向量化注入（有向量数据但暂不调用）';
     // 只要当前有未向量阶段参与注入，就保留其模式选择器；混合阶段可同时显示两种控制。
@@ -2812,12 +2823,12 @@ async function onPromptReady(eventData) {
     const plotDepth= cfg.plotInjDepth?? DEFAULT_SETTINGS.plotInjDepth;
     const plotRole = cfg.plotInjRole ?? DEFAULT_SETTINGS.plotInjRole;
 
-    // 分离已向量/未向量的开启阶段
-    const vecInjDisabled = !!(cfg.vecInjDisabled);
-    const vecStages = vecInjDisabled ? [] : enabledStages.filter(si => S.stageVecDone[si]);
-    const rawStages = vecInjDisabled
-        ? enabledStages.slice()
-        : enabledStages.filter(si => !S.stageVecDone[si]);
+    // 分离已向量/未向量的开启阶段。旧设置残留不能代替用户主动关闭。
+    const { vectorStages: vecStages, rawStages } = niResolveStageInjectionPlan({
+        enabledStages,
+        stageVecDone: S.stageVecDone,
+        settings: cfg,
+    });
 
     // ① 向量块注入
     if (vecStages.length) {
@@ -3303,7 +3314,7 @@ jQuery(async () => {
     $app.on('click', '#ni-stage-prompt-btn', () => niToggleStagePrompt());
     $app.on('click', '#ni-vec-off-btn', () => {
         const cfg = extension_settings[EXT_NAME];
-        cfg.vecInjDisabled = !cfg.vecInjDisabled;
+        niSetVectorInjectionDisabledByUser(cfg, !niIsVectorInjectionDisabledByUser(cfg));
         niSaveSettings();
         niUpdateVecOffBtn();
     });
