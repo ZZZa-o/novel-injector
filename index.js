@@ -55,7 +55,9 @@ import {
     isVectorRowCompatible,
     niBuildTbLightRecallContext,
     niBuildTbNodeVectorQuery,
+    niBuildStageNodeVectorQuery,
     niBuildWeightedVectorQueries,
+    niResolveVectorRecallStageScopes,
     niSelectRecentVectorMessageTexts,
     splitText,
     summarizeVectorCompatibility,
@@ -2718,6 +2720,9 @@ const {
     getNodesForStage,
     niMergeStageNodes,
     recallRelevant,
+    niResolveVectorRecallStageScopes,
+    niGetTbNodes,
+    niTbReconcileCurrentNode,
     callCleanApi,
     niSaveSettings,
     saveSettingsDebounced,
@@ -2765,6 +2770,56 @@ Object.assign(window, {
 // ============================================================
 // 注入酒馆上下文
 // ============================================================
+function niRecallTextHasTerm(text, term) {
+    const source = String(text || '').toLowerCase().replace(/\s+/g, '');
+    const needle = String(term || '').trim().toLowerCase().replace(/\s+/g, '');
+    return !!needle && source.includes(needle);
+}
+
+function niBuildVectorRecallKeywordTerms(texts, nodes = []) {
+    const queryText = (Array.isArray(texts) ? texts : [])
+        .map(text => String(text || ''))
+        .join('\n');
+    const terms = [];
+    const add = term => {
+        const value = String(term || '').trim();
+        if (value.length < 2 || value.length > 32) return;
+        if (niRecallTextHasTerm(queryText, value)) terms.push(value);
+    };
+
+    (S.characters || []).forEach(character => {
+        add(character?.name);
+        try {
+            niCharPresenceTerms(character).forEach(add);
+        } catch (_) {
+            // 角色资料不完整时忽略关键词辅助，不影响语义召回。
+        }
+    });
+    (Array.isArray(nodes) ? nodes : []).forEach(node => {
+        add(node?.title);
+        (Array.isArray(node?.branch_links) ? node.branch_links : []).forEach(add);
+    });
+    return [...new Set(terms)].sort((a, b) => b.length - a.length);
+}
+
+function niGetCurrentStageRecallNodes(scope) {
+    const nodes = [];
+    if (scope?.currentWindowStart == null || scope?.boundaryStageIdx == null) return nodes;
+    for (let stageIdx = scope.currentWindowStart; stageIdx <= scope.boundaryStageIdx; stageIdx++) {
+        nodes.push(...niMergeStageNodes(getNodesForStage(stageIdx)));
+    }
+    return nodes;
+}
+
+function niBuildCurrentStageNodeRecallQuery(scope, curTbNode) {
+    if (curTbNode) {
+        // 穿书模式只使用当前节点，不把当前节点之后的节点带入查询。
+        return niBuildTbNodeVectorQuery(curTbNode);
+    }
+    const nodes = niGetCurrentStageRecallNodes(scope);
+    return niBuildStageNodeVectorQuery(nodes, { maxNodes: 8, maxTextLength: 2600 });
+}
+
 async function onPromptReady(eventData) {
     if (eventData?.dryRun) return;
     // 插件总开关
@@ -2824,26 +2879,34 @@ async function onPromptReady(eventData) {
     const plotRole = cfg.plotInjRole ?? DEFAULT_SETTINGS.plotInjRole;
 
     // 分离已向量/未向量的开启阶段。旧设置残留不能代替用户主动关闭。
-    const { vectorStages: vecStages, rawStages } = niResolveStageInjectionPlan({
+    const { rawStages, vectorInjectionDisabled } = niResolveStageInjectionPlan({
         enabledStages,
         stageVecDone: S.stageVecDone,
         settings: cfg,
     });
 
     // ① 向量块注入
-    if (vecStages.length) {
-        // 穿书模式下，取当前节点的时间/地点作为语义锚点
-        let curTbNode = null;
-        if (extension_settings[EXT_NAME]?.transBookMode) {
-            const tbNodes = niGetTbNodes();
-            niTbReconcileCurrentNode(tbNodes);
-            curTbNode = tbNodes[S.tbCurIdx] || null;
-        }
+    let curTbNode = null;
+    let tbNodesForRecall = [];
+    if (extension_settings[EXT_NAME]?.transBookMode) {
+        tbNodesForRecall = niGetTbNodes();
+        niTbReconcileCurrentNode(tbNodesForRecall);
+        curTbNode = tbNodesForRecall[S.tbCurIdx] || null;
+    }
+    const vectorRecallScope = niResolveVectorRecallStageScopes({
+        enabledStages,
+        stageVecDone: S.stageVecDone,
+        currentStageIdx: curTbNode?.stageIdx,
+    });
+
+    if (!vectorInjectionDisabled && (
+        vectorRecallScope.currentStages.length || vectorRecallScope.historicalStages.length
+    )) {
         const nodeRecallContext = curTbNode ? niBuildTbLightRecallContext(curTbNode) : null;
         const lightRecallContext = extension_settings[EXT_NAME]?.tbLightRecallMode
             ? nodeRecallContext
             : null;
-        const nodeContext = niBuildTbNodeVectorQuery(curTbNode);
+        const nodeContext = niBuildCurrentStageNodeRecallQuery(vectorRecallScope, curTbNode);
 
         // 按用户设置取消息条数；各条消息单独提取后加权召回
         const msgTag    = (extension_settings[EXT_NAME]?.vecMsgTag || '').trim();
@@ -2853,12 +2916,20 @@ async function onPromptReady(eventData) {
         // 构造加权 queries：最新条权重1.0，每往前一条×0.5
         // nodeContext 拼入最新一条
         const weightedQueries = niBuildWeightedVectorQueries(recentMsgs, { nodeContext });
+        const keywordTerms = niBuildVectorRecallKeywordTerms(
+            weightedQueries.map(query => query.text),
+            niGetCurrentStageRecallNodes(vectorRecallScope),
+        );
 
         if (weightedQueries.length) {
             try {
-                const recallText = await recallRelevantWeighted(weightedQueries, vecStages, {
+                const recallText = await recallRelevantWeighted(weightedQueries, vectorRecallScope.currentStages, {
                     lightRecallContext,
                     nodeRecallContext,
+                    historicalStages: vectorRecallScope.historicalStages,
+                    historyTopK: 2,
+                    splitSections: true,
+                    keywordTerms,
                 });
                 if (recallText.trim()) {
                     const vecContent = `[小说原著相关片段·向量召回]\n${recallText}\n[/小说原著相关片段·向量召回]`;
