@@ -52,6 +52,7 @@ import {
     niResolvePausedTransbookPromptSlots,
     niResolveStageInjectionPlan,
     niSetVectorInjectionDisabledByUser,
+    niShouldSyncRoleplayDepth,
 } from './lib/injection-system.js';
 
 import {
@@ -1287,7 +1288,24 @@ function niSyncRoleplayToDepth() {
     const cfg = extension_settings[EXT_NAME] || {};
     const enabled = cfg.pluginEnabled !== false && cfg.roleplayEnabled !== false;
     const promptText = cfg.roleplayPrompt || ROLEPLAY_PROMPT;
-    ta.value = enabled ? niApplyUserSubstitution(promptText) : '';
+    const nextText = enabled ? niApplyUserSubstitution(promptText) : '';
+
+    // 对这个文本框派发 input 会让酒馆保存整张角色表单。表单没有绑定当前选中的角色时
+    // （刚删除角色、群聊或欢迎页、切换角色的加载间隙、新建角色）不能触发，
+    // 否则表单里的旧卡会被写回磁盘。
+    const ctx = getContext() || {};
+    const form = ta.form || q('#form_create');
+    const shouldSync = niShouldSyncRoleplayDepth({
+        characterId: ctx.characterId,
+        characters: ctx.characters,
+        formAction: form?.getAttribute('actiontype') || '',
+        formAvatar: q('#avatar_url_pole')?.value ?? null,
+        currentText: ta.value,
+        nextText,
+    });
+    if (!shouldSync) return;
+
+    ta.value = nextText;
     ta.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
